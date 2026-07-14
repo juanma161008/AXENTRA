@@ -1,0 +1,490 @@
+/* Layout — shell, sidebar y encabezado. Hoja de estilos propia, look empresarial:
+   estructura sólida, jerarquía clara, sin efectos "glass" ni tarjetas flotantes.
+   Todo en flexbox y responsive (drawer off-canvas en móvil/tablet). */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-page);
+}
+
+.app-shell__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  border: none;
+  background: rgba(5, 8, 18, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* ---------- Sidebar ---------- */
+/* Paleta de marca (Adobe Color) aplicada solo dentro del sidebar: sobrescribe los
+   tokens del sistema como variables locales, así todos los componentes compartidos
+   (icon-btn, btn, status-chip...) heredan el tema oscuro sin duplicar reglas. */
+
+.app-sidebar {
+  --brand-blue: #0511f2;
+  --brand-blue-deep: #030a8c;
+  --brand-navy: #031740;
+  --brand-cyan: #05f2db;
+  --brand-black: #0d0d0d;
+  --sidebar-gutter: 16px;
+
+  --bg-elevated: rgba(255, 255, 255, 0.07);
+  --bg-subtle: rgba(255, 255, 255, 0.045);
+  --bg-surface: rgba(255, 255, 255, 0.06);
+  --text-primary: #f4f7ff;
+  --text-secondary: rgba(244, 247, 255, 0.66);
+  --text-muted: rgba(244, 247, 255, 0.42);
+  --border-color: rgba(244, 247, 255, 0.12);
+  --border-strong: rgba(244, 247, 255, 0.22);
+  --primary: var(--brand-blue);
+  --primary-strong: var(--brand-cyan);
+  --primary-soft: rgba(5, 242, 219, 0.14);
+
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, var(--brand-navy), var(--brand-black) 130%);
+  border-right: 1px solid var(--border-color);
+  transition: var(--transition);
+  z-index: 30;
+}
+
+.app-sidebar--collapsed {
+  width: var(--sidebar-collapsed);
+}
+
+.app-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px var(--sidebar-gutter);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-sidebar__logo-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 64px;
+  height: 36px;
+  padding: 5px;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.app-sidebar--collapsed .app-sidebar__logo-badge {
+  width: 40px;
+}
+
+.app-sidebar__logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.app-sidebar__brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-sidebar__brand-copy strong {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.app-sidebar__brand-copy span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.app-sidebar__collapse {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.app-sidebar__mobile-close {
+  display: none;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* ---------- Empresa activa ---------- */
+
+.app-sidebar__company {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px var(--sidebar-gutter) 4px;
+  padding: 10px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.app-sidebar--collapsed .app-sidebar__company {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.app-sidebar__company-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #ffffff;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-sidebar__company-avatar:has(span) {
+  background: var(--brand-blue);
+}
+
+.app-sidebar__company-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+}
+
+.app-sidebar__company-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-sidebar__company-info strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__company-info span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__company-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  transition: var(--transition-fast);
+}
+
+.app-sidebar__company-switch:hover {
+  color: var(--brand-cyan);
+  border-color: var(--brand-cyan);
+}
+
+/* ---------- Navegación ---------- */
+
+.app-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px var(--sidebar-gutter);
+  overflow-y: auto;
+}
+
+.app-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 12px 9px 9px;
+  border-left: 3px solid transparent;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: var(--transition-fast);
+}
+
+.app-nav__item:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.app-nav__item--active {
+  border-left-color: var(--brand-cyan);
+  background: var(--primary-soft);
+  color: var(--text-primary);
+}
+
+.app-nav__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.app-nav__item--active .app-nav__icon {
+  color: var(--brand-cyan);
+}
+
+.app-nav__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.app-nav__copy span {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-nav__item--active .app-nav__copy span {
+  color: var(--brand-cyan);
+}
+
+/* ---------- Pie: usuario + acciones ---------- */
+
+.app-sidebar__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px var(--sidebar-gutter);
+  border-top: 1px solid var(--border-color);
+}
+
+.app-sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-sidebar__user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--brand-cyan);
+  color: var(--brand-navy);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-sidebar__user-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-sidebar__user-copy strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__user-copy span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__utility {
+  display: flex;
+  gap: 8px;
+}
+
+/* Colapsar: oculta texto, centra íconos */
+
+.app-sidebar--collapsed .app-sidebar__brand-copy,
+.app-sidebar--collapsed .app-sidebar__company-info,
+.app-sidebar--collapsed .app-sidebar__company-switch,
+.app-sidebar--collapsed .app-nav__copy,
+.app-sidebar--collapsed .app-sidebar__user {
+  display: none;
+}
+
+.app-sidebar--collapsed .app-nav__item {
+  justify-content: center;
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
+.app-sidebar--collapsed .app-sidebar__footer {
+  align-items: center;
+}
+
+/* ---------- Contenido principal ---------- */
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-header__left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.app-header__menu {
+  display: none;
+  flex-shrink: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.app-header__title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.app-header__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.app-header__title h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.app-header__title p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.app-content {
+  flex: 1;
+  padding: 26px 28px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 768px) {
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(84vw, 320px);
+    box-shadow: var(--shadow-xl);
+    transform: translateX(-100%);
+  }
+
+  .app-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .app-sidebar__mobile-close {
+    display: inline-flex;
+  }
+
+  .app-header__menu {
+    display: inline-flex;
+  }
+
+  .app-header {
+    padding: 14px 18px;
+  }
+
+  .app-content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header__actions {
+    width: 100%;
+  }
+
+  .app-header__actions .btn {
+    flex: 1 1 auto;
+  }
+}

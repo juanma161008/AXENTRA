@@ -1,0 +1,295 @@
+/* Administración — hoja de estilos propia para Usuarios/Empresas/Entidades/Permisos.
+   Flexbox, minimalista, responsive. Reutiliza .modal-overlay/.modal-panel de app.css
+   para los formularios de crear/editar. */
+
+.adm-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.adm-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 20px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+
+.adm-hero h1 {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.adm-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.adm-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  width: fit-content;
+  flex-wrap: wrap;
+}
+
+.adm-tabs__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: calc(var(--radius-sm) - 4px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  transition: var(--transition-fast);
+}
+
+.adm-tabs__item:hover {
+  color: var(--text-primary);
+}
+
+.adm-tabs__item--active {
+  background: var(--bg-elevated);
+  color: var(--primary-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.adm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.adm-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.adm-section__header h2 {
+  margin: 0 0 2px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.adm-section__header p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* Tabla genérica */
+
+.adm-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adm-table__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.adm-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  transition: var(--transition-fast);
+}
+
+.adm-row:hover {
+  border-color: var(--border-strong);
+}
+
+.adm-row__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.adm-row__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.adm-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 2 1 200px;
+  min-width: 0;
+}
+
+.adm-row__main strong {
+  font-size: 13.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adm-row__main span {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adm-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 160px;
+}
+
+.adm-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.adm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.adm-empty svg {
+  color: var(--text-muted);
+}
+
+.adm-empty h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.adm-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 30px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.adm-alert {
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.adm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adm-form__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.adm-permiso-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adm-permiso-group h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.adm-permiso-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+}
+
+.adm-permiso-item span {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+  .adm-row {
+    flex-wrap: wrap;
+  }
+
+  .adm-row__actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

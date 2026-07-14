@@ -1,0 +1,32 @@
+# Secrets / environment
+.env
+*.env
+backend/.env
+backend/token.txt
+token.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/venv/
+backend/__pycache__/
+.pytest_cache/
+
+# Node / frontend build
+node_modules/
+dist/
+.vite/
+frontend/dist/
+frontend/.vite/
+
+# Uploaded documents (real business data, not source)
+uploads/
+backend/uploads/
+
+# Misc
+*.log
+backend/src.zip
+.agents/
+.claude/

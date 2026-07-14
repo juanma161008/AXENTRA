@@ -1,0 +1,233 @@
+/* Login — hoja de estilos propia. Paleta de marca (Adobe Color): panel izquierdo
+   con degradado navy/negro y el logo, panel derecho con el formulario, limpio y
+   minimalista. Flexbox, responsive (el panel de marca se reduce en móvil). */
+
+.login-page {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  font-family: var(--font-family);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.login-left {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 55%;
+  height: 100%;
+  padding: clamp(12px, 3vh, 48px);
+  background: linear-gradient(160deg, #031740 0%, #0d0d0d 100%);
+  overflow: hidden;
+}
+
+.login-left::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle at 30% 20%, rgba(5, 242, 219, 0.16), transparent 45%),
+    radial-gradient(circle at 80% 80%, rgba(5, 17, 242, 0.28), transparent 50%);
+  pointer-events: none;
+}
+
+.login-brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  text-align: center;
+}
+
+.login-brand__logo {
+  width: min(920px, 92vw, 66vh);
+}
+
+.login-right {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 45%;
+  height: 100%;
+  padding: clamp(12px, 3vh, 32px);
+  background: #f4f6fb;
+  box-sizing: border-box;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 400px;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: clamp(18px, 4vh, 36px);
+  box-shadow: 0 12px 40px rgba(16, 22, 43, 0.1);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.login-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(5, 17, 242, 0.08);
+  color: #030a8c;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.login-card__header h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #10162b;
+}
+
+.login-card__header p {
+  margin: 0;
+  color: #667085;
+  font-size: 14px;
+}
+
+.login-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-card__form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-card__form .field__control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid #d7dde7;
+  background: #ffffff;
+  color: #98a2b3;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.login-card__form .field__control:focus-within {
+  border-color: #0511f2;
+  box-shadow: 0 0 0 3px rgba(5, 17, 242, 0.12);
+}
+
+.login-card__form .field__control input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 14px;
+  color: #10162b;
+}
+
+.login-card__form .field__control input::placeholder {
+  color: #98a2b3;
+}
+
+.field__icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #98a2b3;
+  background: transparent;
+  border: none;
+}
+
+.field__icon-button:hover {
+  color: #0511f2;
+}
+
+.auth-form__error {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fdecec;
+  border: 1px solid #f5c2c2;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0511f2, #030a8c);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  box-shadow: 0 10px 24px rgba(5, 17, 242, 0.28);
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.login-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.login-footer {
+  text-align: center;
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+@media (max-width: 900px) {
+  .login-page {
+    flex-direction: column;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .login-left {
+    flex: 0 0 auto;
+    min-height: 220px;
+    padding: 28px;
+  }
+
+  .login-brand__logo {
+    width: min(560px, 90vw, 32vh);
+  }
+
+  .login-right {
+    flex: 1 1 auto;
+    height: auto;
+    padding: 28px 20px;
+  }
+
+  .login-card {
+    padding: clamp(16px, 3.5vh, 28px) 22px;
+    max-height: none;
+  }
+}
