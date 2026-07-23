@@ -1675,6 +1675,167 @@
   color: var(--danger, #ef4444);
 }
 
+/* ---------- Mensajeria interna ---------- */
+
+.mensajes-trigger {
+  position: relative;
+}
+
+.mensajes-trigger__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mensajes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.mensajes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mensaje-item {
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--border-color);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.mensaje-item:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* No leido: solo un punto + texto en negrita, sin lavar toda la tarjeta de color (eso
+   es lo que se veia "sucio" combinado con el fondo difuminado del modal). */
+.mensaje-item--no-leido {
+  border-left-color: var(--primary);
+}
+
+.mensaje-item--no-leido .mensaje-item__header strong::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  vertical-align: middle;
+}
+
+.mensaje-item--no-leido .mensaje-item__asunto {
+  font-weight: 700;
+}
+
+/* Avisos automaticos: borde e icono de color propio para que resalten distinto de un
+   mensaje normal de un compañero. */
+.mensaje-item--alerta {
+  border-left-color: var(--danger, #ef4444);
+  background: var(--danger-soft, rgba(239, 68, 68, 0.08));
+}
+
+.mensaje-item--alerta .mensaje-item__tipo {
+  color: var(--danger, #ef4444);
+}
+
+.mensaje-item--oportunidad {
+  border-left-color: var(--primary);
+}
+
+.mensaje-item--oportunidad .mensaje-item__tipo {
+  color: var(--primary);
+}
+
+.mensaje-item--checklist {
+  border-left-color: var(--success, #10b981);
+}
+
+.mensaje-item--checklist .mensaje-item__tipo {
+  color: var(--success, #10b981);
+}
+
+.mensaje-item__tipo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.mensaje-item__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mensaje-item__header strong {
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+.mensaje-item__fecha {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mensaje-item__asunto {
+  display: block;
+  margin-top: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mensaje-item__preview {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mensaje-item__cuerpo {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
 .fin-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

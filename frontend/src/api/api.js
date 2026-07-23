@@ -210,6 +210,26 @@ export const licitacionApi = {
   },
 };
 
+export const secopApi = {
+  buscar: (q, limit = 20, config = {}) => api.get('/secop/buscar', { params: { q, limit }, ...config }),
+};
+
+export const mensajeApi = {
+  contactos: (config = {}) => api.get('/mensajes/contactos', config),
+  list: (carpeta = 'recibidos', config = {}) => api.get('/mensajes/', { params: { carpeta }, ...config }),
+  noLeidos: (config = {}) => api.get('/mensajes/no-leidos', config),
+  create: (payload) => api.post('/mensajes/', payload),
+  marcarLeido: (mensajeId) => api.patch(`/mensajes/${mensajeId}/leido`),
+  remove: (mensajeId) => api.delete(`/mensajes/${mensajeId}`),
+};
+
+export const oportunidadApi = {
+  list: (params = {}, config = {}) => api.get('/oportunidades/', { params, ...config }),
+  create: (payload) => api.post('/oportunidades/', payload),
+  update: (oportunidadId, payload) => api.patch(`/oportunidades/${oportunidadId}`, payload),
+  remove: (oportunidadId) => api.delete(`/oportunidades/${oportunidadId}`),
+};
+
 export const requisitoApi = {
   list: (licitacionId, config = {}) => api.get(`/licitaciones/${licitacionId}/requisitos`, config),
   create: (licitacionId, payload) => api.post(`/licitaciones/${licitacionId}/requisitos`, { ...payload, licitacion_id: licitacionId }),

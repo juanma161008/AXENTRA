@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useTheme } from './hooks/useTheme';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { empresaApi, STORAGE_KEYS } from './api/api';
+import { empresaApi, oportunidadApi, normalizeApiError, STORAGE_KEYS } from './api/api';
 import { normalizeCompanies } from './utils/workspace';
 import Login from './components/auth/Login';
 import Layout from './components/layout/Layout';
@@ -14,6 +14,7 @@ import LicitacionesPanel from './components/licitaciones/LicitacionesPanel';
 import ReportsPanel from './components/reports/ReportsPanel';
 import CompanySelector from './components/company/CompanySelector';
 import CreateLicitacionModal from './components/licitaciones/CreateLicitacionModal';
+import SecopSearchModal from './components/licitaciones/SecopSearchModal';
 import AdminPanel from './components/admin/AdminPanel';
 import './styles/global.css';
 import './styles/app.css';
@@ -55,6 +56,9 @@ const AppContent = () => {
   const [selectedLicitacionId, setSelectedLicitacionId] = useLocalStorage(STORAGE_KEYS.licitacionId, '');
   const [companySelectorOpen, setCompanySelectorOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [secopModalOpen, setSecopModalOpen] = useState(false);
+  const [secopPrefill, setSecopPrefill] = useState(null);
+  const [oportunidadOrigenId, setOportunidadOrigenId] = useState('');
   const [pendingDetailId, setPendingDetailId] = useState('');
   const isAdmin = Boolean(user?.roles?.some((role) => ADMIN_ROLES.includes(role)));
 
@@ -177,6 +181,19 @@ const AppContent = () => {
       setSelectedLicitacionId(licitacion.id);
     }
 
+    // Si esta licitacion viene de una oportunidad, se marca esa oportunidad como
+    // "convertida" y se enlaza el proceso resultante -- asi el gerente ve el flujo
+    // completo (creada -> revisada -> convertida) en vez de que la oportunidad
+    // simplemente desaparezca sin dejar rastro de en que quedo.
+    if (oportunidadOrigenId && licitacion?.id) {
+      try {
+        await oportunidadApi.update(oportunidadOrigenId, { estado: 'convertida', licitacion_id: licitacion.id });
+      } catch (err) {
+        toast.error(normalizeApiError(err, 'La licitación se creó, pero no se pudo marcar la oportunidad como convertida'));
+      }
+    }
+    setOportunidadOrigenId('');
+
     setCreateModalOpen(false);
     setActiveModule('biblioteca');
     await refreshWorkspace();
@@ -200,17 +217,26 @@ const AppContent = () => {
     setCreateModalOpen(true);
   };
 
+  const usarProcesoSecop = (prefill, oportunidadId = '') => {
+    setSecopPrefill(prefill);
+    setOportunidadOrigenId(oportunidadId);
+    setSecopModalOpen(false);
+    openCreateModal();
+  };
+
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':
         return (
           <Dashboard
             selectedCompany={selectedCompany}
+            companyOptions={companies}
             isAdmin={isAdmin}
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
             onFocusLicitacion={handleFocusLicitacion}
             onCreateLicitacion={openCreateModal}
+            onUsarComoLicitacion={usarProcesoSecop}
             refreshToken={workspaceVersion}
           />
         );
@@ -223,6 +249,7 @@ const AppContent = () => {
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
             onCreateLicitacion={openCreateModal}
+            onBuscarSecop={() => setSecopModalOpen(true)}
             onNavigate={setActiveModule}
             onRefreshWorkspace={refreshWorkspace}
             refreshToken={workspaceVersion}
@@ -259,10 +286,12 @@ const AppContent = () => {
         return (
           <Dashboard
             selectedCompany={selectedCompany}
+            companyOptions={companies}
             isAdmin={isAdmin}
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
             onCreateLicitacion={openCreateModal}
+            onUsarComoLicitacion={usarProcesoSecop}
             refreshToken={workspaceVersion}
           />
         );
@@ -324,8 +353,19 @@ const AppContent = () => {
         companyOptions={companies}
         defaultCompanyId={selectedCompany?.id || ''}
         isAdmin={Boolean(user?.roles?.some((role) => ['super_admin', 'admin_empresa'].includes(role)))}
-        onClose={() => setCreateModalOpen(false)}
+        prefill={secopPrefill}
+        onClose={() => {
+          setCreateModalOpen(false);
+          setSecopPrefill(null);
+          setOportunidadOrigenId('');
+        }}
         onCreated={handleCreatedLicitacion}
+      />
+
+      <SecopSearchModal
+        open={secopModalOpen}
+        onClose={() => setSecopModalOpen(false)}
+        onUsarProceso={usarProcesoSecop}
       />
     </>
   );

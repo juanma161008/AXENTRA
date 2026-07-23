@@ -22,6 +22,7 @@ STATEMENTS = [
     "ALTER TABLE licitaciones.licitaciones ADD COLUMN IF NOT EXISTS checklist_excluidos JSONB DEFAULT '[]'::jsonb",
     "ALTER TABLE licitaciones.licitaciones ADD COLUMN IF NOT EXISTS indicadores_financieros_requeridos JSONB DEFAULT '{}'::jsonb",
     "ALTER TABLE licitaciones.licitaciones ADD COLUMN IF NOT EXISTS indicadores_financieros_rup_manual JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE licitaciones.licitaciones ADD COLUMN IF NOT EXISTS ultima_alerta_enviada DATE",
     # --- negocio.entidades: falta por completo (usada por EntidadController) ---
     """
     CREATE TABLE IF NOT EXISTS negocio.entidades (
@@ -56,6 +57,53 @@ STATEMENTS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_usuarios_permisos_usuario ON seguridad.usuarios_permisos (usuario_id)",
+    # --- licitaciones.oportunidades: avisos rapidos (URL SECOP + comentario) para que el
+    # equipo no dependa de un Word en una carpeta compartida ---
+    """
+    CREATE TABLE IF NOT EXISTS licitaciones.oportunidades (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        empresa_id UUID,
+        url_secop TEXT NOT NULL,
+        comentario TEXT,
+        fecha_presentacion TIMESTAMP,
+        estado VARCHAR(30) NOT NULL DEFAULT 'pendiente',
+        licitacion_id UUID,
+        creado_por UUID,
+        revisado_por UUID,
+        revisado_en TIMESTAMP,
+        empresa_asignada_por UUID,
+        empresa_asignada_en TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+    )
+    """,
+    # Tabla creada en una version anterior sin estas columnas: agregarlas si faltan.
+    "ALTER TABLE licitaciones.oportunidades ADD COLUMN IF NOT EXISTS fecha_presentacion TIMESTAMP",
+    "ALTER TABLE licitaciones.oportunidades ADD COLUMN IF NOT EXISTS empresa_asignada_por UUID",
+    "ALTER TABLE licitaciones.oportunidades ADD COLUMN IF NOT EXISTS empresa_asignada_en TIMESTAMP",
+    # Un admin sin empresa filtrada puede dejarla sin asignar todavia (visible para todos).
+    "ALTER TABLE licitaciones.oportunidades ALTER COLUMN empresa_id DROP NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_oportunidades_empresa ON licitaciones.oportunidades (empresa_id)",
+    "CREATE INDEX IF NOT EXISTS idx_oportunidades_estado ON licitaciones.oportunidades (estado)",
+    # --- seguridad.mensajes: mensajeria interna entre usuarios (correo local, sin SMTP real) ---
+    """
+    CREATE TABLE IF NOT EXISTS seguridad.mensajes (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        remitente_id UUID,
+        destinatario_id UUID NOT NULL,
+        asunto VARCHAR(255),
+        cuerpo TEXT NOT NULL,
+        tipo VARCHAR(30) NOT NULL DEFAULT 'mensaje',
+        leido BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # Tabla creada en una version anterior sin esta columna, o con remitente_id obligatorio
+    # (los avisos automaticos del sistema -alertas- no tienen un usuario remitente real).
+    "ALTER TABLE seguridad.mensajes ADD COLUMN IF NOT EXISTS tipo VARCHAR(30) NOT NULL DEFAULT 'mensaje'",
+    "ALTER TABLE seguridad.mensajes ALTER COLUMN remitente_id DROP NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_mensajes_destinatario ON seguridad.mensajes (destinatario_id)",
+    "CREATE INDEX IF NOT EXISTS idx_mensajes_remitente ON seguridad.mensajes (remitente_id)",
 ]
 
 

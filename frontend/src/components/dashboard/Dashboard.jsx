@@ -32,6 +32,7 @@ import {
   getStatusTone,
   toProperCase,
 } from '../../utils/workspace';
+import OportunidadesPanel from './OportunidadesPanel';
 import '../../styles/dashboard.css';
 
 const DOC_ESTADO_META = {
@@ -72,11 +73,13 @@ const KPI_CONFIG = [
 
 const Dashboard = ({
   selectedCompany,
+  companyOptions = [],
   isAdmin,
   selectedLicitacionId,
   onSelectLicitacion,
   onFocusLicitacion,
   onCreateLicitacion,
+  onUsarComoLicitacion,
   refreshToken,
 }) => {
   const [summary, setSummary] = useState(null);
@@ -365,6 +368,13 @@ const Dashboard = ({
             })}
           </section>
 
+          <OportunidadesPanel
+            selectedCompany={selectedCompany}
+            companyOptions={companyOptions}
+            isAdmin={isAdmin}
+            onUsarComoLicitacion={onUsarComoLicitacion}
+          />
+
           <section className="dashboard__panel">
             <header className="dashboard__panel-header">
               <div className="dashboard__panel-header-row">
@@ -470,7 +480,12 @@ const Dashboard = ({
                   >
                     <span className={`status-dot status-dot--${getSemaforoTone(item.semaforo)}`} />
                     <div className="dashboard__row-body">
-                      <strong>{item.numero_secop || 'Sin número de proceso'}</strong>
+                      <strong>
+                        {item.numero_secop || 'Sin número de proceso'}
+                        {isAdmin && item.empresa_nombre ? (
+                          <span className="dashboard__row-empresa">{item.empresa_nombre}</span>
+                        ) : null}
+                      </strong>
                       <span>{toProperCase(item.entidad_contratante) || 'Entidad no definida'}</span>
                     </div>
                     <div className="dashboard__row-meta">
@@ -790,7 +805,12 @@ const Dashboard = ({
                       >
                         <span className={`status-dot status-dot--${tone}`} />
                         <div className="dashboard__row-body">
-                          <strong>{toProperCase(item.entidad)}</strong>
+                          <strong>
+                            {toProperCase(item.entidad)}
+                            {isAdmin && item.empresa_nombre ? (
+                              <span className="dashboard__row-empresa">{item.empresa_nombre}</span>
+                            ) : null}
+                          </strong>
                           <span>{item.objeto}</span>
                         </div>
                         <div className="dashboard__row-meta">
@@ -902,7 +922,12 @@ const Dashboard = ({
                       >
                         <span className={`status-dot status-dot--${getSemaforoTone(item.semaforo)}`} />
                         <div className="dashboard__row-body">
-                          <strong>{item.numero_secop || 'Sin número de proceso'}</strong>
+                          <strong>
+                            {item.numero_secop || 'Sin número de proceso'}
+                            {isAdmin && item.empresa_nombre ? (
+                              <span className="dashboard__row-empresa">{item.empresa_nombre}</span>
+                            ) : null}
+                          </strong>
                           <span>{toProperCase(item.entidad_contratante) || 'Entidad no definida'}</span>
                         </div>
                         <div className="dashboard__row-meta">

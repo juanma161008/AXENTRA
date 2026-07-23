@@ -45,6 +45,7 @@ from src.services.licitacion_explorer_service import (
     limpiar_codigo,
     obtener_codigos_desde_texto,
 )
+from src.services.notificacion_service import notificar_por_empresa
 from src.utils.permissions import has_permission
 
 router = APIRouter(prefix="/api/licitaciones", tags=["licitaciones"])
@@ -396,6 +397,18 @@ def actualizar_checklist_item(
     estado = ChecklistEstadoController.update_item(
         licitacion_id, item_key, data.cumplido, data.documento_id, current_user.id, db
     )
+
+    if data.cumplido:
+        remitente_nombre = f"{current_user.nombre} {current_user.apellido}".strip()
+        notificar_por_empresa(
+            db,
+            licitacion.get("empresa_id"),
+            current_user.id,
+            "Checklist validado",
+            f"{remitente_nombre} marcó \"{item_key}\" como cumplido en el proceso {licitacion.get('numero_secop') or licitacion_id}.",
+            tipo="checklist",
+        )
+
     return {
         "item_key": estado.item_key,
         "cumplido": estado.cumplido,

@@ -277,6 +277,18 @@
   white-space: nowrap;
 }
 
+.lic-row__empresa {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  vertical-align: middle;
+}
+
 .lic-row__object {
   flex: 1 1 260px;
   min-width: 0;
@@ -791,6 +803,97 @@
   }
   50% {
     background: rgba(250, 204, 21, 0.75);
+  }
+}
+
+/* ---------- Buscador de SECOP II ---------- */
+
+.secop-search__form {
+  margin-bottom: 8px;
+}
+
+.secop-search__portal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.secop-search__portal-link:hover {
+  text-decoration: underline;
+}
+
+.secop-search__results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.secop-search__item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+}
+
+.secop-search__item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.secop-search__item-main strong {
+  font-size: 13.5px;
+}
+
+.secop-search__item-main span {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.secop-search__item-meta {
+  color: var(--text-muted) !important;
+  font-size: 11.5px !important;
+}
+
+.secop-search__item-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.secop-search__ver-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.secop-search__ver-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 780px) {
+  .secop-search__item {
+    grid-template-columns: 1fr;
+  }
+
+  .secop-search__item-side {
+    align-items: flex-start;
   }
 }
 

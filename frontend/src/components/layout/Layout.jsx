@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { getInitials, toProperCase } from '../../utils/workspace';
+import MensajesPanel from '../mensajes/MensajesPanel';
 import logoAxentra from '../../assets/logo axentra.png';
 import '../../styles/layout.css';
 
@@ -135,6 +136,7 @@ const Sidebar = ({
         ) : null}
 
         <div className="app-sidebar__utility">
+          <MensajesPanel />
           <button className="icon-btn icon-btn--ghost" onClick={onThemeToggle} type="button" title="Cambiar tema">
             {isDarkMode ? <SunMedium size={16} /> : <MoonStar size={16} />}
           </button>

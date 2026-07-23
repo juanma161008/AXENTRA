@@ -95,6 +95,7 @@ class LicitacionResponse(LicitacionBase):
     updated_at: Optional[datetime]
     dias_restantes: Optional[int] = None
     semaforo: Optional[str] = None
+    empresa_nombre: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -181,6 +182,8 @@ class ProximoCierre(BaseModel):
     fecha_cierre: datetime
     dias_restantes: int
     estado: str
+    empresa_id: Optional[UUID] = None
+    empresa_nombre: Optional[str] = None
 
 # ============================================
 # CHECKLIST MANUAL (checkbox + responsable) Y SUBSANACION
@@ -218,6 +221,8 @@ class SemaforoLicitacionItem(BaseModel):
     estado: Optional[str] = None
     semaforo: str
     dias_restantes: Optional[int] = None
+    empresa_id: Optional[UUID] = None
+    empresa_nombre: Optional[str] = None
 
 class SemaforoResumen(BaseModel):
     rojo: int = 0

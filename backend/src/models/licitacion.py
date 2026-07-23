@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Numeric, JSON, Integer
+from sqlalchemy import Column, String, Boolean, Date, DateTime, Text, Numeric, JSON, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from src.config.database import Base
@@ -35,6 +35,9 @@ class Licitacion(Base):
     indicadores_financieros_requeridos = Column(JSON, default=dict)
     indicadores_financieros_rup_manual = Column(JSON, default=dict)
     notas = Column(Text)
+    # Ultimo dia que se mando la notificacion de "alerta critica" por esta licitacion;
+    # evita que cada visita al Dashboard vuelva a mandar el mismo aviso el mismo dia.
+    ultima_alerta_enviada = Column(Date, nullable=True)
     usuario_creador = Column(UUID(as_uuid=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

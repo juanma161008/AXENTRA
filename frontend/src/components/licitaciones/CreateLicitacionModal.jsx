@@ -58,6 +58,7 @@ const CreateLicitacionModal = ({
   companyOptions = [],
   defaultCompanyId = '',
   isAdmin = false,
+  prefill = null,
   onClose,
   onCreated,
 }) => {
@@ -72,15 +73,18 @@ const CreateLicitacionModal = ({
 
   useEffect(() => {
     if (!open) return;
-    setForm(initialForm(defaultCompanyId));
+    // Si se abre con datos de un proceso ya identificado (p.ej. desde la busqueda de
+    // SECOP), se precargan encima de la base en blanco; el NIT llega sin digito de
+    // verificacion desde SECOP, asi que ese campo queda para completar a mano.
+    setForm({ ...initialForm(defaultCompanyId), ...(prefill || {}) });
     setPliegoFile(null);
     setRupFile(null);
     setOptionalFiles({});
     setCreating(false);
     setError('');
     setStep('form');
-    setEntidadStatus('idle');
-  }, [open, defaultCompanyId]);
+    setEntidadStatus(prefill?.entidadContratante ? 'encontrada' : 'idle');
+  }, [open, defaultCompanyId, prefill]);
 
   const selectedCompany = useMemo(
     () => companyOptions.find((company) => company.id === form.empresaId) || companyOptions[0] || null,

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileStack,
   FolderOpen,
+  Landmark,
   Loader2,
   Pencil,
   Search,
@@ -65,6 +66,7 @@ const LicitacionesPanel = ({
   selectedLicitacionId,
   onSelectLicitacion,
   onCreateLicitacion,
+  onBuscarSecop,
   onNavigate,
   onRefreshWorkspace,
   refreshToken,
@@ -288,6 +290,10 @@ const LicitacionesPanel = ({
               <PlusCircle size={16} />
               Nueva Licitación
             </button>
+            <button className="btn btn--secondary" onClick={onBuscarSecop} type="button">
+              <Landmark size={16} />
+              Buscar en SECOP
+            </button>
             <button className="btn btn--secondary" onClick={() => onNavigate?.('biblioteca')} type="button">
               <FolderOpen size={16} />
               Biblioteca
@@ -377,6 +383,9 @@ const LicitacionesPanel = ({
                               />
                             ) : null}
                             {licitacion.numero_secop || 'Sin proceso'}
+                            {isAdmin && licitacion.empresa_nombre ? (
+                              <span className="lic-row__empresa">{licitacion.empresa_nombre}</span>
+                            ) : null}
                           </strong>
                           <span>{toProperCase(licitacion.entidad_contratante) || 'Entidad no definida'}</span>
                         </div>
@@ -424,6 +433,7 @@ const LicitacionesPanel = ({
                 <div className="section-badge">
                   <ShieldCheck size={14} />
                   Proceso
+                  {isAdmin && selectedDetail?.empresa?.nombre ? ` · ${selectedDetail.empresa.nombre}` : ''}
                 </div>
                 <h3>{selectedLicitacion.numero_secop || 'Proceso sin número'}</h3>
                 <p>{toProperCase(selectedLicitacion.entidad_contratante) || 'Entidad no definida'}</p>

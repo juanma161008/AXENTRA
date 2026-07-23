@@ -356,6 +356,19 @@
   white-space: nowrap;
 }
 
+.dashboard__row-empresa {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: none;
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  vertical-align: middle;
+}
+
 .dashboard__row-body span {
   font-size: 12px;
   color: var(--text-secondary);
@@ -477,5 +490,131 @@
     flex-direction: row;
     gap: 8px;
     margin-left: 46px;
+  }
+}
+
+/* ---------- Oportunidades SECOP ---------- */
+
+.dashboard__panel--oportunidades {
+  flex: 1 1 100%;
+}
+
+.oportunidad-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+}
+
+.oportunidad-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  flex: 1 1 320px;
+}
+
+.oportunidad-item__main p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.oportunidad-item__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.oportunidad-item__link:hover {
+  text-decoration: underline;
+}
+
+.oportunidad-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.oportunidad-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.oportunidad-item__flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 4px;
+}
+
+.oportunidad-item__flow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.oportunidad-item__flow-step--done {
+  color: var(--success, #10b981);
+}
+
+.oportunidad-item__meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.oportunidad-item__fecha {
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.oportunidad-item__empresa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.oportunidad-item__empresa select {
+  padding: 2px 8px;
+  border-radius: var(--radius-xs, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 11.5px;
+}
+
+.oportunidad-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .oportunidad-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oportunidad-item__actions {
+    justify-content: flex-end;
   }
 }

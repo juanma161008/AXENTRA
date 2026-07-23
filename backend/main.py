@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 # Importar rutas
-from src.routes import auth, users, empresas, entidades, licitaciones, documentos, roles
+from src.routes import auth, users, empresas, entidades, licitaciones, documentos, roles, secop, oportunidades, mensajes
 
 # Importar middleware y mejoras
 from src.middleware.audit import AuditMiddleware
@@ -85,6 +85,9 @@ app.include_router(entidades.router)
 app.include_router(roles.router)
 app.include_router(licitaciones.router)
 app.include_router(documentos.router)
+app.include_router(secop.router)
+app.include_router(oportunidades.router)
+app.include_router(mensajes.router)
 
 # ============================================
 # WEBSOCKETS

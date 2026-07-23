@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import uuid
 from typing import List, Optional
 
@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.controllers.checklist_estado_controller import ChecklistEstadoController
+from src.services.notificacion_service import notificar_por_empresa
 from src.controllers.documento_controller import DocumentoController
 from src.controllers.entidad_controller import EntidadController
 from src.models.documento import Documento
@@ -95,6 +96,17 @@ class LicitacionController:
             return query.filter(UsuarioEmpresa.empresa_id.in_(normalized))
 
         return query
+
+    @staticmethod
+    def _mapa_nombres_empresa(licitaciones, db: Session) -> dict:
+        """Nombre de empresa por id, para poder mostrarlo en vistas consolidadas (admin
+        viendo todas las empresas a la vez) donde la fila por si sola no deja claro de
+        cual empresa es cada licitacion."""
+        empresa_ids = {lic.empresa_id for lic in licitaciones if lic.empresa_id}
+        if not empresa_ids:
+            return {}
+        empresas = db.query(Empresa).filter(Empresa.id.in_(empresa_ids)).all()
+        return {empresa.id: empresa.nombre for empresa in empresas}
 
     @staticmethod
     def _days_remaining(fecha_cierre):
@@ -199,6 +211,7 @@ class LicitacionController:
         config = LicitacionController.get_configuracion_alertas(db)
         licitacion_ids = [lic.id for lic in licitaciones]
         con_subsanacion = ChecklistEstadoController.licitaciones_con_subsanaciones_activas(licitacion_ids, db)
+        nombres_empresa = LicitacionController._mapa_nombres_empresa(licitaciones, db)
 
         conteo = {"rojo": 0, "naranja": 0, "verde": 0}
         detalle = []
@@ -219,8 +232,26 @@ class LicitacionController:
                     "estado": lic.estado,
                     "semaforo": tone,
                     "dias_restantes": LicitacionController._proxima_fecha_pendiente(lic),
+                    "empresa_id": lic.empresa_id,
+                    "empresa_nombre": nombres_empresa.get(lic.empresa_id),
                 }
             )
+
+            # Alerta critica por mensajeria interna, maximo una vez por dia por licitacion
+            # (si no, cada visita al Dashboard de cualquiera del equipo la reenviaria).
+            if tone == "rojo" and lic.ultima_alerta_enviada != date.today():
+                dias = LicitacionController._proxima_fecha_pendiente(lic)
+                notificar_por_empresa(
+                    db,
+                    lic.empresa_id,
+                    None,
+                    "Alerta crítica",
+                    f"{lic.numero_secop or 'Un proceso'} está en alerta crítica"
+                    + (f": quedan {dias} día(s)." if dias is not None else "."),
+                    tipo="alerta",
+                )
+                lic.ultima_alerta_enviada = date.today()
+                db.commit()
 
         detalle.sort(key=lambda item: orden_severidad.get(item["semaforo"], 3))
 
@@ -250,6 +281,7 @@ class LicitacionController:
         con_subsanacion = ChecklistEstadoController.licitaciones_con_subsanaciones_activas(
             [lic.id for lic in licitaciones], db
         )
+        nombres_empresa = LicitacionController._mapa_nombres_empresa(licitaciones, db)
 
         result = []
         for lic in licitaciones:
@@ -260,6 +292,7 @@ class LicitacionController:
                     "semaforo": LicitacionController._semaforo_desde_datos(
                         lic, config.dias_rojo, config.dias_naranja, lic.id in con_subsanacion
                     ),
+                    "empresa_nombre": nombres_empresa.get(lic.empresa_id),
                 }
             )
 
@@ -523,6 +556,8 @@ class LicitacionController:
             .all()
         )
 
+        nombres_empresa = LicitacionController._mapa_nombres_empresa(licitaciones, db)
+
         result = []
         for lic in licitaciones:
             result.append(
@@ -533,6 +568,8 @@ class LicitacionController:
                     "fecha_cierre": lic.fecha_cierre,
                     "dias_restantes": LicitacionController._days_remaining(lic.fecha_cierre),
                     "estado": lic.estado,
+                    "empresa_id": lic.empresa_id,
+                    "empresa_nombre": nombres_empresa.get(lic.empresa_id),
                 }
             )
 
