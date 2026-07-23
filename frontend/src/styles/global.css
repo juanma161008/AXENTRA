@@ -361,6 +361,28 @@ img {
   font-weight: 700;
 }
 
+.field__hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.field--required .field__control,
+.field--required textarea {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+[data-theme='dark'] .field--required .field__control,
+[data-theme='dark'] .field--required textarea {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.field--required .field__control:focus-within {
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+}
+
 .entidad-status {
   font-size: 11px;
   font-weight: 600;

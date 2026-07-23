@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Landmark, Loader2, Pencil, PlusCircle, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FileSpreadsheet, Landmark, Loader2, Pencil, PlusCircle, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { entidadApi, normalizeApiError } from '../../api/api';
 import { combineNit, splitNit } from '../../utils/workspace';
@@ -23,6 +23,8 @@ const AdminEntidades = () => {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
@@ -98,6 +100,32 @@ const AdminEntidades = () => {
     }
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+
+    try {
+      const response = await entidadApi.importarExcel(file);
+      const { creadas = 0, actualizadas = 0, omitidas = 0, errores = [] } = response.data || {};
+      toast.success(`Importación lista: ${creadas} creadas, ${actualizadas} actualizadas${omitidas ? `, ${omitidas} omitidas` : ''}`);
+      if (errores.length) {
+        toast.error(`Algunas filas no se importaron: ${errores.slice(0, 3).join(' · ')}`);
+      }
+      await load();
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible importar el Excel'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleDelete = async (entidad) => {
     if (!window.confirm(`¿Desactivar ${entidad.nombre}? Las licitaciones existentes conservan su referencia.`)) return;
     try {
@@ -116,10 +144,23 @@ const AdminEntidades = () => {
           <h2>Entidades contratantes</h2>
           <p>Se completan solas al crear licitaciones, o las agregas aquí de una vez.</p>
         </div>
-        <button className="btn btn--primary" type="button" onClick={openCreate}>
-          <PlusCircle size={16} />
-          Nueva entidad
-        </button>
+        <div className="adm-section__header-actions">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={handleImportFile}
+          />
+          <button className="btn btn--secondary" type="button" onClick={handleImportClick} disabled={importing}>
+            {importing ? <Loader2 size={16} className="spin" /> : <FileSpreadsheet size={16} />}
+            {importing ? 'Importando...' : 'Importar Excel'}
+          </button>
+          <button className="btn btn--primary" type="button" onClick={openCreate}>
+            <PlusCircle size={16} />
+            Nueva entidad
+          </button>
+        </div>
       </div>
 
       {error ? <div className="adm-alert">{error}</div> : null}
@@ -135,7 +176,7 @@ const AdminEntidades = () => {
           <h3>Sin entidades todavía</h3>
         </div>
       ) : (
-        <div className="adm-table">
+        <div className="adm-table adm-table--scroll">
           {entidades.map((entidad) => (
             <div key={entidad.id} className="adm-row">
               <div className="adm-row__main">

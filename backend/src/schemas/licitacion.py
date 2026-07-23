@@ -47,6 +47,10 @@ class LicitacionBase(BaseModel):
     fecha_subsanacion: Optional[datetime] = None
     fecha_adjudicacion: Optional[datetime] = None
     fecha_visita_obra: Optional[datetime] = None
+    fecha_consultas: Optional[datetime] = None
+    fecha_cierre_dudas: Optional[datetime] = None
+    fecha_evaluacion: Optional[datetime] = None
+    fechas_personalizadas: Optional[List[Dict]] = None
     pliego_url: Optional[str] = None
     pliego_texto: Optional[str] = None
     rup_url: Optional[str] = None
@@ -72,6 +76,10 @@ class LicitacionUpdate(BaseModel):
     fecha_subsanacion: Optional[datetime] = None
     fecha_adjudicacion: Optional[datetime] = None
     fecha_visita_obra: Optional[datetime] = None
+    fecha_consultas: Optional[datetime] = None
+    fecha_cierre_dudas: Optional[datetime] = None
+    fecha_evaluacion: Optional[datetime] = None
+    fechas_personalizadas: Optional[List[Dict]] = None
     pliego_url: Optional[str] = None
     pliego_texto: Optional[str] = None
     rup_url: Optional[str] = None
@@ -86,6 +94,7 @@ class LicitacionResponse(LicitacionBase):
     created_at: datetime
     updated_at: Optional[datetime]
     dias_restantes: Optional[int] = None
+    semaforo: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -172,6 +181,49 @@ class ProximoCierre(BaseModel):
     fecha_cierre: datetime
     dias_restantes: int
     estado: str
+
+# ============================================
+# CHECKLIST MANUAL (checkbox + responsable) Y SUBSANACION
+# ============================================
+class ChecklistItemUpdate(BaseModel):
+    cumplido: bool
+    documento_id: Optional[UUID] = None
+
+class SubsanacionUpdate(BaseModel):
+    notas: Optional[str] = None
+
+class ChecklistActividadItem(BaseModel):
+    item_key: str
+    item_nombre: Optional[str] = None
+    cumplido: bool
+    validado_por: Optional[UUID] = None
+    validado_por_nombre: Optional[str] = None
+    validado_en: Optional[datetime] = None
+
+# ============================================
+# SEMAFORO DE ALERTAS
+# ============================================
+class ConfiguracionAlertasResponse(BaseModel):
+    dias_rojo: int
+    dias_naranja: int
+
+class ConfiguracionAlertasUpdate(BaseModel):
+    dias_rojo: int = Field(..., ge=0)
+    dias_naranja: int = Field(..., ge=0)
+
+class SemaforoLicitacionItem(BaseModel):
+    id: UUID
+    numero_secop: Optional[str] = None
+    entidad_contratante: Optional[str] = None
+    estado: Optional[str] = None
+    semaforo: str
+    dias_restantes: Optional[int] = None
+
+class SemaforoResumen(BaseModel):
+    rojo: int = 0
+    naranja: int = 0
+    verde: int = 0
+    detalle: List[SemaforoLicitacionItem] = Field(default_factory=list)
 
 # ============================================
 # MENSAJES

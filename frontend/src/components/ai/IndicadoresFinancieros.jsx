@@ -58,11 +58,34 @@ const IndicadoresFinancieros = ({ licitacionId, licitacion, indicadores = [], on
     setRupFile(null);
   }, [licitacionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // La tabla de "Comparación automática" antes solo mostraba lo que ya estaba guardado en
+  // el servidor, así que escribir un valor arriba no se reflejaba abajo hasta darle
+  // "Guardar indicadores" y recargar — muy poco intuitivo cuando ambas cosas están en la
+  // misma pantalla. Aquí se recalcula el cumplimiento en vivo con lo que hay en los inputs
+  // (o, si el campo está vacío, con lo último ya guardado/detectado por OCR).
+  const indicadoresEnVivo = useMemo(() => {
+    return indicadores.map((item) => {
+      const requeridoTexto = valoresRequeridos[item.key];
+      const rupTexto = valoresRup[item.key];
+
+      const valorRequerido =
+        requeridoTexto !== undefined && requeridoTexto !== '' ? toRawUnit(item, requeridoTexto) : item.valor_requerido;
+      const valorRup = rupTexto !== undefined && rupTexto !== '' ? toRawUnit(item, rupTexto) : item.valor_rup;
+
+      let cumple = null;
+      if (valorRequerido !== null && valorRup !== null) {
+        cumple = item.operador === '>=' ? valorRup >= valorRequerido : valorRup <= valorRequerido;
+      }
+
+      return { ...item, valor_requerido: valorRequerido, valor_rup: valorRup, cumple };
+    });
+  }, [indicadores, valoresRequeridos, valoresRup]);
+
   const resumen = useMemo(() => {
-    const conDato = indicadores.filter((item) => item.cumple !== null);
-    const cumplen = indicadores.filter((item) => item.cumple === true).length;
-    return { total: indicadores.length, conDato: conDato.length, cumplen };
-  }, [indicadores]);
+    const conDato = indicadoresEnVivo.filter((item) => item.cumple !== null);
+    const cumplen = indicadoresEnVivo.filter((item) => item.cumple === true).length;
+    return { total: indicadoresEnVivo.length, conDato: conDato.length, cumplen };
+  }, [indicadoresEnVivo]);
 
   const analizarDocumento = async (file, tipo) => {
     if (!file || !licitacionId) return;
@@ -237,26 +260,24 @@ const IndicadoresFinancieros = ({ licitacionId, licitacion, indicadores = [], on
           <h4>Comparación automática</h4>
         </div>
 
-        <div className="checklist-table">
-          <div className="checklist-table__head">
+        <div className="fin-comparativa">
+          <div className="fin-comparativa__head">
             <span>Indicador</span>
             <span>Pliego</span>
             <span>RUP</span>
             <span>Estado</span>
           </div>
 
-          {indicadores.map((item) => (
-            <div key={item.key} className="checklist-row">
-              <div className="checklist-row__copy">
-                <strong>{item.nombre}</strong>
-              </div>
+          {indicadoresEnVivo.map((item) => (
+            <div key={item.key} className="fin-comparativa__row">
+              <span className="fin-comparativa__nombre">{item.nombre}</span>
 
-              <span>
+              <span className="fin-comparativa__valor">
                 {item.operador === '>=' ? '≥ ' : '≤ '}
                 {formatoLectura(item, item.valor_requerido)}
               </span>
 
-              <span>{formatoLectura(item, item.valor_rup)}</span>
+              <span className="fin-comparativa__valor">{formatoLectura(item, item.valor_rup)}</span>
 
               {item.cumple === null ? (
                 <span className="status-chip status-chip--neutral">Falta info</span>

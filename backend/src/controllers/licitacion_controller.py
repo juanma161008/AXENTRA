@@ -6,15 +6,31 @@ from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.controllers.checklist_estado_controller import ChecklistEstadoController
 from src.controllers.documento_controller import DocumentoController
 from src.controllers.entidad_controller import EntidadController
 from src.models.documento import Documento
 from src.models.empresa import Empresa
-from src.models.licitacion import HistorialEstado, Licitacion
+from src.models.licitacion import ConfiguracionAlertas, HistorialEstado, Licitacion
 from src.models.user import User
 from src.models.usuario_empresa import UsuarioEmpresa
 from src.schemas.licitacion import DashboardResumen, LicitacionCreate, LicitacionUpdate
 from src.utils.constants import ESTADOS_LICITACION, MENSAJES
+
+# Orden de exhibicion del cronograma de 8 hitos (usado por el semaforo para saber
+# cual es la proxima fecha pendiente de una licitacion).
+CRONOGRAMA_FIELDS = [
+    "fecha_publicacion",
+    "fecha_visita_obra",
+    "fecha_consultas",
+    "fecha_cierre_dudas",
+    "fecha_cierre",
+    "fecha_subsanacion",
+    "fecha_evaluacion",
+    "fecha_adjudicacion",
+]
+
+ESTADOS_ACTIVOS_SEMAFORO = {"en_busqueda", "en_preparacion"}
 
 
 class LicitacionController:
@@ -87,6 +103,130 @@ class LicitacionController:
         return (fecha_cierre.date() - datetime.now().date()).days
 
     @staticmethod
+    def _avanzar_fase_por_cronograma(licitacion: Licitacion, db: Session) -> bool:
+        """Si el proceso sigue 'en_busqueda' y la fecha de publicacion (o apertura) ya paso,
+        lo avanza automaticamente a 'en_preparacion'. Las fases siguientes (presentada,
+        adjudicada, perdida, desierta) se dejan siempre manuales: dependen de hechos reales
+        (si se alcanzo a presentar, si gano, etc.), no solo de que una fecha haya pasado.
+        Devuelve True si el estado cambio."""
+        if licitacion.estado != ESTADOS_LICITACION["EN_BUSQUEDA"]:
+            return False
+
+        fecha_publicacion = licitacion.fecha_publicacion or licitacion.fecha_apertura
+        if not fecha_publicacion or fecha_publicacion.date() > datetime.now().date():
+            return False
+
+        estado_anterior = licitacion.estado
+        licitacion.estado = ESTADOS_LICITACION["EN_PREPARACION"]
+        db.add(
+            HistorialEstado(
+                id=uuid.uuid4(),
+                licitacion_id=licitacion.id,
+                estado_anterior=estado_anterior,
+                estado_nuevo=licitacion.estado,
+                comentario="Avance automatico: ya paso la fecha de publicacion del proceso",
+            )
+        )
+        db.commit()
+        db.refresh(licitacion)
+        return True
+
+    # ============================================
+    # SEMAFORO DE ALERTAS
+    # ============================================
+    @staticmethod
+    def get_configuracion_alertas(db: Session) -> ConfiguracionAlertas:
+        """Configuracion global (singleton); se crea con valores por defecto si no existe."""
+        config = db.query(ConfiguracionAlertas).first()
+        if not config:
+            config = ConfiguracionAlertas(id=uuid.uuid4(), dias_rojo=7, dias_naranja=15)
+            db.add(config)
+            db.commit()
+            db.refresh(config)
+        return config
+
+    @staticmethod
+    def update_configuracion_alertas(dias_rojo: int, dias_naranja: int, usuario_id: Optional[uuid.UUID], db: Session) -> ConfiguracionAlertas:
+        config = LicitacionController.get_configuracion_alertas(db)
+        config.dias_rojo = dias_rojo
+        config.dias_naranja = dias_naranja
+        config.updated_by = usuario_id
+        db.commit()
+        db.refresh(config)
+        return config
+
+    @staticmethod
+    def _proxima_fecha_pendiente(licitacion) -> Optional[int]:
+        """Dias restantes hasta la fecha mas cercana (futura o de hoy) del cronograma."""
+        hoy = datetime.now().date()
+        fechas_futuras = []
+        for campo in CRONOGRAMA_FIELDS:
+            valor = getattr(licitacion, campo, None)
+            if valor and valor.date() >= hoy:
+                fechas_futuras.append(valor.date())
+
+        if not fechas_futuras:
+            return None
+        return (min(fechas_futuras) - hoy).days
+
+    @staticmethod
+    def _semaforo_desde_datos(licitacion, dias_rojo: int, dias_naranja: int, tiene_subsanacion: bool) -> Optional[str]:
+        if (licitacion.estado or "") not in ESTADOS_ACTIVOS_SEMAFORO:
+            return None
+
+        dias = LicitacionController._proxima_fecha_pendiente(licitacion)
+
+        if tiene_subsanacion or (dias is not None and dias <= dias_rojo):
+            return "rojo"
+        if dias is not None and dias <= dias_naranja:
+            return "naranja"
+        return "verde"
+
+    @staticmethod
+    def calcular_semaforo(licitacion, db: Session) -> Optional[str]:
+        """Semaforo de una sola licitacion (usado por el explorador de detalle)."""
+        config = LicitacionController.get_configuracion_alertas(db)
+        tiene_subsanacion = ChecklistEstadoController.licitacion_tiene_subsanaciones_activas(licitacion.id, db)
+        return LicitacionController._semaforo_desde_datos(licitacion, config.dias_rojo, config.dias_naranja, tiene_subsanacion)
+
+    @staticmethod
+    def get_semaforo_resumen(db: Session, empresa_id: Optional[uuid.UUID] = None, empresa_ids=None) -> dict:
+        """Conteo + detalle (una fila por licitacion) rojo/naranja/verde para el scope de
+        empresa(s) accesible."""
+        query = LicitacionController._scope_licitaciones(db.query(Licitacion), empresa_id, empresa_ids)
+        licitaciones = query.filter(Licitacion.estado.in_(list(ESTADOS_ACTIVOS_SEMAFORO))).all()
+
+        config = LicitacionController.get_configuracion_alertas(db)
+        licitacion_ids = [lic.id for lic in licitaciones]
+        con_subsanacion = ChecklistEstadoController.licitaciones_con_subsanaciones_activas(licitacion_ids, db)
+
+        conteo = {"rojo": 0, "naranja": 0, "verde": 0}
+        detalle = []
+        orden_severidad = {"rojo": 0, "naranja": 1, "verde": 2}
+        for lic in licitaciones:
+            tone = LicitacionController._semaforo_desde_datos(
+                lic, config.dias_rojo, config.dias_naranja, lic.id in con_subsanacion
+            )
+            if not tone:
+                continue
+
+            conteo[tone] += 1
+            detalle.append(
+                {
+                    "id": lic.id,
+                    "numero_secop": lic.numero_secop,
+                    "entidad_contratante": lic.entidad_contratante,
+                    "estado": lic.estado,
+                    "semaforo": tone,
+                    "dias_restantes": LicitacionController._proxima_fecha_pendiente(lic),
+                }
+            )
+
+        detalle.sort(key=lambda item: orden_severidad.get(item["semaforo"], 3))
+
+        return {**conteo, "detalle": detalle}
+
+    @staticmethod
     def get_licitaciones(
         db: Session,
         empresa_id: Optional[uuid.UUID] = None,
@@ -103,12 +243,23 @@ class LicitacionController:
 
         licitaciones = query.order_by(Licitacion.fecha_cierre.asc(), Licitacion.created_at.desc()).offset(skip).limit(limit).all()
 
+        for lic in licitaciones:
+            LicitacionController._avanzar_fase_por_cronograma(lic, db)
+
+        config = LicitacionController.get_configuracion_alertas(db)
+        con_subsanacion = ChecklistEstadoController.licitaciones_con_subsanaciones_activas(
+            [lic.id for lic in licitaciones], db
+        )
+
         result = []
         for lic in licitaciones:
             result.append(
                 {
                     **lic.__dict__,
                     "dias_restantes": LicitacionController._days_remaining(lic.fecha_cierre),
+                    "semaforo": LicitacionController._semaforo_desde_datos(
+                        lic, config.dias_rojo, config.dias_naranja, lic.id in con_subsanacion
+                    ),
                 }
             )
 
@@ -121,9 +272,12 @@ class LicitacionController:
         if not licitacion:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Licitacion no encontrada")
 
+        LicitacionController._avanzar_fase_por_cronograma(licitacion, db)
+
         return {
             **licitacion.__dict__,
             "dias_restantes": LicitacionController._days_remaining(licitacion.fecha_cierre),
+            "semaforo": LicitacionController.calcular_semaforo(licitacion, db),
         }
 
     @staticmethod
@@ -211,10 +365,16 @@ class LicitacionController:
             # sin este refresh, licitacion.__dict__ queda vacio y rompe la serializacion
             # de la respuesta (faltan id, empresa_id, created_at, etc.).
             db.refresh(licitacion)
+        else:
+            # El estado no lo toco esta actualizacion (por ejemplo, solo se guardaron fechas
+            # del cronograma): revisa si ya toca avanzar de fase solo. Si el usuario ya cambio
+            # el estado a mano arriba, no hace falta (y evita loguear el avance dos veces).
+            LicitacionController._avanzar_fase_por_cronograma(licitacion, db)
 
         return {
             **licitacion.__dict__,
             "dias_restantes": LicitacionController._days_remaining(licitacion.fecha_cierre),
+            "semaforo": LicitacionController.calcular_semaforo(licitacion, db),
         }
 
     @staticmethod

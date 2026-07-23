@@ -5,6 +5,7 @@ import {
   FileStack,
   FolderOpen,
   Loader2,
+  Pencil,
   Search,
   ShieldCheck,
   Sparkles,
@@ -19,9 +20,17 @@ import {
   formatDateLong,
   formatDaysLeft,
   formatStatusLabel,
+  getSemaforoLabel,
+  getSemaforoTone,
   getStatusTone,
+  hasPermission,
   toProperCase,
 } from '../../utils/workspace';
+import { resolverAperturaPliego } from '../../utils/pliego';
+import Cronograma from './Cronograma';
+import Checklist from '../checklist/Checklist';
+import EditLicitacionModal from './EditLicitacionModal';
+import PliegoViewerModal from './PliegoViewerModal';
 import '../../styles/licitaciones.css';
 
 const FILTERS = [
@@ -52,11 +61,15 @@ const TONE_VAR = {
 const LicitacionesPanel = ({
   selectedCompany,
   isAdmin,
+  user,
   selectedLicitacionId,
   onSelectLicitacion,
   onCreateLicitacion,
   onNavigate,
+  onRefreshWorkspace,
   refreshToken,
+  pendingDetailId,
+  onConsumePendingDetail,
 }) => {
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
@@ -65,8 +78,12 @@ const LicitacionesPanel = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [checklistModalOpen, setChecklistModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState('');
   const [updatingEstado, setUpdatingEstado] = useState(false);
+  const [togglingChecklistKey, setTogglingChecklistKey] = useState('');
+  const [pliegoViewer, setPliegoViewer] = useState({ open: false, documentoId: null, query: '' });
   const companyId = selectedCompany?.id;
   const isGlobalView = isAdmin && !companyId;
 
@@ -121,43 +138,61 @@ const LicitacionesPanel = ({
     });
   }, [licitaciones, query, stateFilter]);
 
+  const reloadDetail = async (signal) => {
+    if (!selectedLicitacionId) {
+      setSelectedDetail(null);
+      return;
+    }
+
+    try {
+      const response = await licitacionApi.explorer(selectedLicitacionId, signal ? { signal } : {});
+      setSelectedDetail(response.data);
+    } catch (err) {
+      if (signal?.aborted) return;
+      setSelectedDetail(null);
+      setError(normalizeApiError(err, 'No fue posible abrir el detalle de la licitación'));
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
-
-    const loadDetail = async () => {
-      if (!selectedLicitacionId) {
-        setSelectedDetail(null);
-        return;
-      }
-
-      try {
-        const response = await licitacionApi.explorer(selectedLicitacionId, { signal: controller.signal });
-        setSelectedDetail(response.data);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setSelectedDetail(null);
-        setError(normalizeApiError(err, 'No fue posible abrir el detalle de la licitación'));
-      }
-    };
-
-    loadDetail();
+    reloadDetail(controller.signal);
     return () => {
       controller.abort();
     };
   }, [selectedLicitacionId, refreshToken]);
 
+  // Llegar aca desde afuera (p.ej. el semaforo del Dashboard) deja marcado un
+  // pendingDetailId; en cuanto coincide con la licitacion ya seleccionada, se abre el
+  // modal de detalle solo y se avisa al padre para que no se reabra despues por su cuenta.
   useEffect(() => {
-    if (!detailOpen) return undefined;
+    if (pendingDetailId && String(pendingDetailId) === String(selectedLicitacionId)) {
+      setDetailOpen(true);
+      onConsumePendingDetail?.();
+    }
+  }, [pendingDetailId, selectedLicitacionId]);
+
+  useEffect(() => {
+    if (!detailOpen && !checklistModalOpen) return undefined;
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setDetailOpen(false);
+      if (event.key !== 'Escape') return;
+      if (checklistModalOpen) {
+        setChecklistModalOpen(false);
+      } else {
+        setDetailOpen(false);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [detailOpen]);
+  }, [detailOpen, checklistModalOpen]);
 
   const selectedLicitacion = licitaciones.find((item) => String(item.id) === String(selectedLicitacionId)) || null;
+
+  const canEditDatos = isAdmin || hasPermission(user, 'licitaciones.editar');
+  const canEditFechas = isAdmin || hasPermission(user, 'licitaciones.editar_fechas');
+  const canDelete = isAdmin || hasPermission(user, 'licitaciones.eliminar');
 
   const checklistStats = selectedDetail?.resumen_documental || {
     total_documentos: 0,
@@ -171,7 +206,10 @@ const LicitacionesPanel = ({
     setDetailOpen(true);
   };
 
-  const closeDetail = () => setDetailOpen(false);
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setChecklistModalOpen(false);
+  };
 
   const handleChangeEstado = async (event) => {
     const nuevoEstado = event.target.value;
@@ -189,6 +227,21 @@ const LicitacionesPanel = ({
       toast.error(normalizeApiError(err, 'No fue posible actualizar el estado'));
     } finally {
       setUpdatingEstado(false);
+    }
+  };
+
+  const handleToggleChecklistItem = async (item, checked) => {
+    if (!selectedLicitacionId) return;
+
+    setTogglingChecklistKey(item.key);
+
+    try {
+      await licitacionApi.actualizarChecklistItem(selectedLicitacionId, item.key, { cumplido: checked });
+      await reloadDetail();
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible actualizar el checklist'));
+    } finally {
+      setTogglingChecklistKey('');
     }
   };
 
@@ -315,7 +368,16 @@ const LicitacionesPanel = ({
                         onClick={() => openDetail(licitacion.id)}
                       >
                         <div className="lic-row__main">
-                          <strong>{licitacion.numero_secop || 'Sin proceso'}</strong>
+                          <strong>
+                            {licitacion.semaforo ? (
+                              <span
+                                className={`status-dot status-dot--${getSemaforoTone(licitacion.semaforo)}`}
+                                title={`Semáforo: ${getSemaforoLabel(licitacion.semaforo)}`}
+                                style={{ marginRight: 6 }}
+                              />
+                            ) : null}
+                            {licitacion.numero_secop || 'Sin proceso'}
+                          </strong>
                           <span>{toProperCase(licitacion.entidad_contratante) || 'Entidad no definida'}</span>
                         </div>
 
@@ -334,15 +396,17 @@ const LicitacionesPanel = ({
                         <ChevronRight size={16} className="lic-row__chevron" />
                       </button>
 
-                      <button
-                        type="button"
-                        className="icon-btn icon-btn--ghost lic-row__delete"
-                        title="Eliminar licitación"
-                        disabled={deletingId === licitacion.id}
-                        onClick={(event) => handleDeleteLicitacion(licitacion, event)}
-                      >
-                        {deletingId === licitacion.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
-                      </button>
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn--ghost lic-row__delete"
+                          title="Eliminar licitación"
+                          disabled={deletingId === licitacion.id}
+                          onClick={(event) => handleDeleteLicitacion(licitacion, event)}
+                        >
+                          {deletingId === licitacion.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -365,9 +429,21 @@ const LicitacionesPanel = ({
                 <p>{toProperCase(selectedLicitacion.entidad_contratante) || 'Entidad no definida'}</p>
               </div>
 
-              <button className="icon-btn icon-btn--ghost" type="button" onClick={closeDetail}>
-                <X size={18} />
-              </button>
+              <div className="lic-detail__header-actions">
+                {canEditDatos ? (
+                  <button
+                    className="icon-btn icon-btn--ghost"
+                    type="button"
+                    title="Modificar licitación"
+                    onClick={() => setEditModalOpen(true)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                ) : null}
+                <button className="icon-btn icon-btn--ghost" type="button" onClick={closeDetail}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="modal-panel__body">
@@ -387,6 +463,15 @@ const LicitacionesPanel = ({
                     {updatingEstado ? <Loader2 size={12} className="spin" /> : null}
                   </label>
                   <span className="status-chip status-chip--neutral">{formatDaysLeft(selectedLicitacion.dias_restantes)}</span>
+                  {(() => {
+                    const semaforo = selectedDetail?.licitacion?.semaforo ?? selectedLicitacion.semaforo;
+                    if (!semaforo) return null;
+                    return (
+                      <span className={`status-chip status-chip--${getSemaforoTone(semaforo)}`} title="Semáforo de alertas">
+                        <span className={`status-dot status-dot--${getSemaforoTone(semaforo)}`} /> {getSemaforoLabel(semaforo)}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="lic-detail__stats">
@@ -408,6 +493,12 @@ const LicitacionesPanel = ({
                   </div>
                 </div>
 
+                <Cronograma
+                  licitacion={selectedDetail?.licitacion || selectedLicitacion}
+                  isAdmin={canEditFechas}
+                  onUpdated={() => reloadDetail()}
+                />
+
                 <div className="lic-detail__section">
                   <div className="lic-detail__section-header">
                     <h3>Checklist de documentos</h3>
@@ -421,10 +512,20 @@ const LicitacionesPanel = ({
                   <div className="lic-checklist">
                     {(selectedDetail?.documentos_obligatorios || []).slice(0, 6).map((item) => (
                       <div key={item.key} className="lic-checklist__item">
-                        <span className={`status-dot status-dot--${item.cumple ? 'success' : 'neutral'}`} />
+                        <input
+                          type="checkbox"
+                          className="lic-checklist__checkbox"
+                          checked={Boolean(item.cumple)}
+                          disabled={togglingChecklistKey === item.key}
+                          onChange={(event) => handleToggleChecklistItem(item, event.target.checked)}
+                          title="Marcar como cumplido"
+                        />
                         <div className="lic-checklist__copy">
                           <strong>{item.nombre}</strong>
                           <span>{item.documento_nombre || item.descripcion}</span>
+                          {item.cumple && item.validado_por_nombre ? (
+                            <span className="lic-checklist__validado">Aprobado por {item.validado_por_nombre}</span>
+                          ) : null}
                         </div>
                         <span className={`status-chip status-chip--${item.cumple ? 'success' : 'warning'}`}>
                           {item.cumple ? 'Listo' : 'Pendiente'}
@@ -440,7 +541,7 @@ const LicitacionesPanel = ({
                   </div>
 
                   <div className="lic-actions">
-                    <button className="btn btn--secondary" onClick={() => onNavigate?.('checklist')} type="button">
+                    <button className="btn btn--secondary" onClick={() => setChecklistModalOpen(true)} type="button">
                       Ver checklist
                     </button>
                     <button className="btn btn--secondary" onClick={() => onNavigate?.('biblioteca')} type="button">
@@ -450,15 +551,17 @@ const LicitacionesPanel = ({
                       <ArrowUpRight size={16} />
                       Revisar IA
                     </button>
-                    <button
-                      className="btn btn--danger"
-                      type="button"
-                      disabled={deletingId === selectedLicitacion.id}
-                      onClick={() => handleDeleteLicitacion(selectedLicitacion)}
-                    >
-                      {deletingId === selectedLicitacion.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
-                      Eliminar licitación
-                    </button>
+                    {canDelete ? (
+                      <button
+                        className="btn btn--danger"
+                        type="button"
+                        disabled={deletingId === selectedLicitacion.id}
+                        onClick={() => handleDeleteLicitacion(selectedLicitacion)}
+                      >
+                        {deletingId === selectedLicitacion.id ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+                        Eliminar licitación
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -467,9 +570,21 @@ const LicitacionesPanel = ({
                     <div className="lic-detail__section-header">
                       <h3>Resumen del pliego</h3>
                     </div>
-                    <p className="lic-pliego-preview">
+                    <button
+                      type="button"
+                      className="lic-pliego-preview lic-pliego-preview--clickable"
+                      onClick={() => {
+                        const preview = (selectedDetail.pliego_analisis.texto_preview || '').slice(0, 280);
+                        const resultado = resolverAperturaPliego(selectedDetail?.documentos || [], preview);
+                        if (!resultado.ok) {
+                          toast.error('Vuelve a analizar el pliego desde IA para poder verlo en el PDF (los análisis anteriores no guardaron el archivo).');
+                          return;
+                        }
+                        setPliegoViewer({ open: true, documentoId: resultado.documentoId, query: resultado.query });
+                      }}
+                    >
                       {(selectedDetail.pliego_analisis.texto_preview || 'Análisis disponible').slice(0, 280)}
-                    </p>
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -477,6 +592,52 @@ const LicitacionesPanel = ({
           </div>
         </div>
       ) : null}
+
+      {checklistModalOpen && selectedLicitacion ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setChecklistModalOpen(false)}>
+          <div className="modal-panel modal-panel--xl" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-panel__header">
+              <div />
+              <button className="icon-btn icon-btn--ghost" type="button" onClick={() => setChecklistModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-panel__body">
+              <Checklist
+                selectedCompany={selectedCompany}
+                isAdmin={isAdmin}
+                selectedLicitacionId={selectedLicitacionId}
+                onSelectLicitacion={onSelectLicitacion}
+                refreshToken={refreshToken}
+                onRefreshWorkspace={onRefreshWorkspace}
+                onNavigate={onNavigate}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <EditLicitacionModal
+        open={editModalOpen}
+        licitacion={selectedDetail?.licitacion || selectedLicitacion}
+        onClose={() => setEditModalOpen(false)}
+        onSaved={(licitacionActualizada) => {
+          setLicitaciones((current) =>
+            current.map((item) => (String(item.id) === String(licitacionActualizada.id) ? { ...item, ...licitacionActualizada } : item))
+          );
+          setEditModalOpen(false);
+          reloadDetail();
+        }}
+      />
+
+      <PliegoViewerModal
+        open={pliegoViewer.open}
+        documentoId={pliegoViewer.documentoId}
+        query={pliegoViewer.query}
+        titulo={`Pliego · ${selectedLicitacion?.numero_secop || ''}`}
+        onClose={() => setPliegoViewer({ open: false, documentoId: null, query: '' })}
+      />
     </div>
   );
 };

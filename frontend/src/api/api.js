@@ -141,6 +141,12 @@ export const entidadApi = {
   create: (payload) => api.post('/entidades/', payload),
   update: (entidadId, payload) => api.put(`/entidades/${entidadId}`, payload),
   remove: (entidadId) => api.delete(`/entidades/${entidadId}`),
+  importarExcel: (file) => {
+    const formData = buildFormData({ file });
+    return api.post('/entidades/importar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 export const licitacionApi = {
@@ -155,6 +161,17 @@ export const licitacionApi = {
   explorer: (licitacionId, config = {}) => api.get(`/licitaciones/${licitacionId}/explorador`, config),
   excluirChecklistObligatorio: (licitacionId, key) => api.delete(`/licitaciones/${licitacionId}/checklist-obligatorio/${key}`),
   generarChecklistPdf: (licitacionId) => api.post(`/licitaciones/${licitacionId}/checklist/pdf`),
+  actualizarChecklistItem: (licitacionId, itemKey, payload) =>
+    api.patch(`/licitaciones/${licitacionId}/checklist/${itemKey}`, payload),
+  marcarSubsanar: (licitacionId, itemKey, notas) =>
+    api.post(`/licitaciones/${licitacionId}/checklist/${itemKey}/subsanar`, { notas }),
+  resolverSubsanar: (licitacionId, itemKey) =>
+    api.delete(`/licitaciones/${licitacionId}/checklist/${itemKey}/subsanar`),
+  actividadChecklist: (licitacionId, params = {}, config = {}) =>
+    api.get(`/licitaciones/${licitacionId}/checklist/actividad`, { params, ...config }),
+  semaforo: (params = {}, config = {}) => api.get('/licitaciones/dashboard/semaforo', { params, ...config }),
+  getConfiguracionAlertas: (config = {}) => api.get('/licitaciones/configuracion-alertas', config),
+  updateConfiguracionAlertas: (payload) => api.put('/licitaciones/configuracion-alertas', payload),
   analyzePliego: (licitacionId, { file, codigosBusqueda = '' }) => {
     const formData = buildFormData({
       file,
@@ -181,6 +198,16 @@ export const licitacionApi = {
       },
     });
   },
+  exportarComparativoPdf: (licitacionId, config = {}) =>
+    api.get(`/licitaciones/${licitacionId}/comparativo-codigos/pdf`, { responseType: 'blob', ...config }),
+  buscarCodigosUnspsc: (licitacionId, codigosBusqueda) => {
+    const formData = buildFormData({ codigos_busqueda: codigosBusqueda });
+    return api.post(`/licitaciones/${licitacionId}/buscar-codigos-unspsc`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
 };
 
 export const requisitoApi = {
@@ -202,6 +229,7 @@ export const documentoApi = {
   deleteCarpeta: (carpetaId) => api.delete(`/documentos/carpetas/${carpetaId}`),
   delete: (documentoId) => api.delete(`/documentos/${documentoId}`),
   archivo: (documentoId) => api.get(`/documentos/${documentoId}/archivo`, { responseType: 'blob' }),
+  buscarPagina: (documentoId, q) => api.get(`/documentos/${documentoId}/buscar-pagina`, { params: { q } }),
   descargarZip: ({ empresaId, carpetaId, documentoIds = [], carpetaIds = [] } = {}) => {
     const params = { empresa_id: empresaId };
     if (carpetaId) params.carpeta_id = carpetaId;

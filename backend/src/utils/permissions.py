@@ -7,6 +7,8 @@ que siempre pisan el default de su rol para esa clave.
 
 PERMISSIONS = {
     "licitaciones.crear": {"label": "Crear licitaciones", "modulo": "Licitaciones"},
+    "licitaciones.editar": {"label": "Modificar datos del proceso (número, entidad, objeto, cuantía, etc.)", "modulo": "Licitaciones"},
+    "licitaciones.editar_fechas": {"label": "Modificar el cronograma (fechas)", "modulo": "Licitaciones"},
     "licitaciones.eliminar": {"label": "Eliminar licitaciones", "modulo": "Licitaciones"},
     "documentos.eliminar": {"label": "Eliminar documentos", "modulo": "Biblioteca"},
     "checklist.gestionar": {"label": "Agregar/eliminar requisitos personalizados", "modulo": "Checklist"},
@@ -20,6 +22,8 @@ ROLE_DEFAULT_PERMISSIONS = {
     "super_admin": set(PERMISSIONS.keys()),
     "admin_empresa": {
         "licitaciones.crear",
+        "licitaciones.editar",
+        "licitaciones.editar_fechas",
         "licitaciones.eliminar",
         "documentos.eliminar",
         "checklist.gestionar",

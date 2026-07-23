@@ -42,3 +42,10 @@ class EntidadResponse(EntidadBase):
 class MessageResponse(BaseModel):
     message: str
     detail: Optional[str] = None
+
+
+class EntidadImportResponse(BaseModel):
+    creadas: int
+    actualizadas: int
+    omitidas: int
+    errores: list[str]

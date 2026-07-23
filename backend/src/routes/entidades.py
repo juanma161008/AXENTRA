@@ -1,14 +1,14 @@
 from typing import List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.auth.auth import get_current_user
 from src.config.database import get_db
 from src.controllers.entidad_controller import EntidadController
 from src.models.user import User
-from src.schemas.entidad import EntidadCreate, EntidadResponse, EntidadUpdate, MessageResponse
+from src.schemas.entidad import EntidadCreate, EntidadImportResponse, EntidadResponse, EntidadUpdate, MessageResponse
 from src.utils.permissions import has_permission
 
 router = APIRouter(prefix="/api/entidades", tags=["entidades"])
@@ -48,6 +48,22 @@ def buscar_entidad_por_nit(
 ):
     """Buscar una entidad por NIT exacto, para autocompletar el formulario de licitacion."""
     return EntidadController.buscar_por_nit(nit, db)
+
+
+@router.post("/importar", response_model=EntidadImportResponse)
+async def importar_entidades(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Importar entidades masivamente desde un Excel con columnas 'Nombre' y 'NIT'."""
+    _require_admin(current_user)
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío")
+
+    return EntidadController.import_from_excel(file_bytes, db)
 
 
 @router.get("/{entidad_id}", response_model=EntidadResponse)

@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Files,
@@ -19,12 +20,15 @@ import {
   XCircle,
   X,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { documentoApi, licitacionApi, normalizeApiError } from '../../api/api';
 import {
   formatCurrency,
   formatDateLong,
   formatDaysLeft,
   formatStatusLabel,
+  getSemaforoLabel,
+  getSemaforoTone,
   getStatusTone,
   toProperCase,
 } from '../../utils/workspace';
@@ -66,7 +70,15 @@ const KPI_CONFIG = [
   },
 ];
 
-const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLicitacion, onCreateLicitacion, refreshToken }) => {
+const Dashboard = ({
+  selectedCompany,
+  isAdmin,
+  selectedLicitacionId,
+  onSelectLicitacion,
+  onFocusLicitacion,
+  onCreateLicitacion,
+  refreshToken,
+}) => {
   const [summary, setSummary] = useState(null);
   const [licitaciones, setLicitaciones] = useState([]);
   const [docsPorVencer, setDocsPorVencer] = useState([]);
@@ -79,6 +91,12 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
   const [detalleLicitacion, setDetalleLicitacion] = useState(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [detalleError, setDetalleError] = useState('');
+  const [semaforo, setSemaforo] = useState({ rojo: 0, naranja: 0, verde: 0, detalle: [] });
+  const [semaforoModalColor, setSemaforoModalColor] = useState(null);
+  const [configAlertas, setConfigAlertas] = useState(null);
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [configForm, setConfigForm] = useState({ dias_rojo: 7, dias_naranja: 15 });
+  const [savingConfig, setSavingConfig] = useState(false);
   const companyId = selectedCompany?.id;
   // Admin sin empresa seleccionada = vista global (agrega datos de todas las empresas).
   const isGlobalView = isAdmin && !companyId;
@@ -137,15 +155,23 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
 
         const config = { signal: controller.signal };
         const empresaParam = companyId ? { empresa_id: companyId } : {};
-        const [summaryRes, licitacionesRes, docsRes] = await Promise.all([
+        const [summaryRes, licitacionesRes, docsRes, semaforoRes] = await Promise.all([
           licitacionApi.summary(empresaParam, config),
           licitacionApi.list({ ...empresaParam, limit: 8 }, config),
           documentoApi.porVencer({ ...empresaParam, dias: 90 }, config),
+          licitacionApi.semaforo(empresaParam, config),
         ]);
 
         setSummary(summaryRes.data);
         setLicitaciones(Array.isArray(licitacionesRes.data) ? licitacionesRes.data : []);
         setDocsPorVencer(Array.isArray(docsRes.data) ? docsRes.data : []);
+        setSemaforo(semaforoRes.data || { rojo: 0, naranja: 0, verde: 0, detalle: [] });
+
+        if (isAdmin) {
+          const configRes = await licitacionApi.getConfiguracionAlertas(config);
+          setConfigAlertas(configRes.data);
+          setConfigForm(configRes.data);
+        }
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(normalizeApiError(err, 'No fue posible cargar el dashboard'));
@@ -159,7 +185,30 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
     return () => {
       controller.abort();
     };
-  }, [companyId, isGlobalView, refreshToken]);
+  }, [companyId, isGlobalView, refreshToken, isAdmin]);
+
+  const handleSaveConfigAlertas = async () => {
+    setSavingConfig(true);
+
+    try {
+      const payload = {
+        dias_rojo: Number(configForm.dias_rojo) || 0,
+        dias_naranja: Number(configForm.dias_naranja) || 0,
+      };
+      const response = await licitacionApi.updateConfiguracionAlertas(payload);
+      setConfigAlertas(response.data);
+      setEditingConfig(false);
+      toast.success('Umbrales de alertas actualizados');
+
+      const empresaParam = companyId ? { empresa_id: companyId } : {};
+      const semaforoRes = await licitacionApi.semaforo(empresaParam);
+      setSemaforo(semaforoRes.data || { rojo: 0, naranja: 0, verde: 0, detalle: [] });
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible actualizar los umbrales'));
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   const stats = useMemo(() => {
     if (!summary) return [];
@@ -235,9 +284,22 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
 
   const irAlProceso = () => {
     if (!detalleLicitacion?.licitacion?.id) return;
-    onSelectLicitacion?.(detalleLicitacion.licitacion.id);
     setProximosModalOpen(false);
     setDetalleLicitacion(null);
+    if (onFocusLicitacion) {
+      onFocusLicitacion(detalleLicitacion.licitacion.id);
+    } else {
+      onSelectLicitacion?.(detalleLicitacion.licitacion.id);
+    }
+  };
+
+  const handleSelectSemaforoItem = (licitacionId) => {
+    setSemaforoModalColor(null);
+    if (onFocusLicitacion) {
+      onFocusLicitacion(licitacionId);
+    } else {
+      onSelectLicitacion?.(licitacionId);
+    }
   };
 
   return (
@@ -303,6 +365,130 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
             })}
           </section>
 
+          <section className="dashboard__panel">
+            <header className="dashboard__panel-header">
+              <div className="dashboard__panel-header-row">
+                <div>
+                  <h2>Semáforo de alertas</h2>
+                  <p>Licitaciones activas por nivel de riesgo (fechas próximas o subsanaciones pendientes).</p>
+                </div>
+                {isAdmin ? (
+                  <button className="btn btn--ghost" type="button" onClick={() => setEditingConfig((value) => !value)}>
+                    {editingConfig ? 'Cerrar' : 'Configurar umbrales'}
+                  </button>
+                ) : null}
+              </div>
+            </header>
+
+            {editingConfig ? (
+              <div className="field-grid field-grid--2" style={{ marginBottom: 16 }}>
+                <label className="field">
+                  <span className="field__label">Días para alerta roja (crítica)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={configForm.dias_rojo}
+                    onChange={(event) => setConfigForm((current) => ({ ...current, dias_rojo: event.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Días para alerta naranja (aviso)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={configForm.dias_naranja}
+                    onChange={(event) => setConfigForm((current) => ({ ...current, dias_naranja: event.target.value }))}
+                  />
+                </label>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <button className="btn btn--primary" type="button" onClick={handleSaveConfigAlertas} disabled={savingConfig}>
+                    {savingConfig ? 'Guardando...' : 'Guardar umbrales'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="dashboard__stats" aria-label="Semáforo de alertas">
+              <button
+                type="button"
+                className="dashboard__stat dashboard__stat--danger dashboard__stat--clickable"
+                onClick={() => setSemaforoModalColor('rojo')}
+                title="Ver licitaciones críticas"
+              >
+                <span className="dashboard__stat-icon">
+                  <AlertTriangle size={18} />
+                </span>
+                <div className="dashboard__stat-body">
+                  <span className="dashboard__stat-label">Críticas (rojo)</span>
+                  <strong className="dashboard__stat-value">{semaforo.rojo}</strong>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="dashboard__stat dashboard__stat--warning dashboard__stat--clickable"
+                onClick={() => setSemaforoModalColor('naranja')}
+                title="Ver licitaciones en aviso"
+              >
+                <span className="dashboard__stat-icon">
+                  <Clock size={18} />
+                </span>
+                <div className="dashboard__stat-body">
+                  <span className="dashboard__stat-label">Aviso (naranja)</span>
+                  <strong className="dashboard__stat-value">{semaforo.naranja}</strong>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="dashboard__stat dashboard__stat--success dashboard__stat--clickable"
+                onClick={() => setSemaforoModalColor('verde')}
+                title="Ver licitaciones normales"
+              >
+                <span className="dashboard__stat-icon">
+                  <CheckCircle2 size={18} />
+                </span>
+                <div className="dashboard__stat-body">
+                  <span className="dashboard__stat-label">Normal (verde)</span>
+                  <strong className="dashboard__stat-value">{semaforo.verde}</strong>
+                </div>
+              </button>
+            </div>
+
+            <div className="dashboard__list dashboard__list--scroll">
+              {(semaforo.detalle || []).length === 0 ? (
+                <div className="dashboard__empty">
+                  <CheckCircle2 size={26} />
+                  <h3>Sin licitaciones en riesgo</h3>
+                  <p>No hay procesos activos con alertas por ahora.</p>
+                </div>
+              ) : (
+                semaforo.detalle.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`dashboard__row ${String(item.id) === String(selectedLicitacionId) ? 'dashboard__row--active' : ''}`}
+                    onClick={() => handleSelectSemaforoItem(item.id)}
+                    type="button"
+                  >
+                    <span className={`status-dot status-dot--${getSemaforoTone(item.semaforo)}`} />
+                    <div className="dashboard__row-body">
+                      <strong>{item.numero_secop || 'Sin número de proceso'}</strong>
+                      <span>{toProperCase(item.entidad_contratante) || 'Entidad no definida'}</span>
+                    </div>
+                    <div className="dashboard__row-meta">
+                      <span className={`status-chip status-chip--${getSemaforoTone(item.semaforo)}`}>
+                        {getSemaforoLabel(item.semaforo)}
+                      </span>
+                      <span className="dashboard__row-date">
+                        {item.dias_restantes === null || item.dias_restantes === undefined
+                          ? 'Sin fecha próxima'
+                          : formatDaysLeft(item.dias_restantes)}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
           <section className="dashboard__columns">
             <article className="dashboard__panel">
               <header className="dashboard__panel-header">
@@ -338,6 +524,12 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
                           <span>{toProperCase(licitacion.entidad_contratante) || 'Entidad no definida'}</span>
                         </div>
                         <div className="dashboard__row-meta">
+                          {licitacion.semaforo ? (
+                            <span
+                              className={`status-dot status-dot--${getSemaforoTone(licitacion.semaforo)}`}
+                              title={`Semáforo: ${getSemaforoLabel(licitacion.semaforo)}`}
+                            />
+                          ) : null}
                           <span className={`status-chip status-chip--${tone}`}>{formatStatusLabel(licitacion.estado)}</span>
                           <span className="dashboard__row-date">
                             {licitacion.dias_restantes === null || licitacion.dias_restantes === undefined
@@ -664,6 +856,70 @@ const Dashboard = ({ selectedCompany, isAdmin, selectedLicitacionId, onSelectLic
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {semaforoModalColor ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setSemaforoModalColor(null)}>
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-panel__header">
+              <div>
+                <div className="section-badge">
+                  <span className={`status-dot status-dot--${getSemaforoTone(semaforoModalColor)}`} />
+                  Semáforo
+                </div>
+                <h3>Licitaciones en {getSemaforoLabel(semaforoModalColor).toLowerCase()}</h3>
+                <p>Selecciona una para abrir su detalle completo.</p>
+              </div>
+              <button className="icon-btn icon-btn--ghost" type="button" onClick={() => setSemaforoModalColor(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-panel__body">
+              {(() => {
+                const items = (semaforo.detalle || []).filter((item) => item.semaforo === semaforoModalColor);
+                if (items.length === 0) {
+                  return (
+                    <div className="dashboard__empty">
+                      <CheckCircle2 size={26} />
+                      <h3>Nada por aquí</h3>
+                      <p>No hay licitaciones en este estado por ahora.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="dashboard__list">
+                    {items.map((item) => (
+                      <button
+                        key={item.id}
+                        className="dashboard__row"
+                        type="button"
+                        onClick={() => handleSelectSemaforoItem(item.id)}
+                      >
+                        <span className={`status-dot status-dot--${getSemaforoTone(item.semaforo)}`} />
+                        <div className="dashboard__row-body">
+                          <strong>{item.numero_secop || 'Sin número de proceso'}</strong>
+                          <span>{toProperCase(item.entidad_contratante) || 'Entidad no definida'}</span>
+                        </div>
+                        <div className="dashboard__row-meta">
+                          <span className={`status-chip status-chip--${getStatusTone(item.estado)}`}>
+                            {formatStatusLabel(item.estado)}
+                          </span>
+                          <span className="dashboard__row-date">
+                            {item.dias_restantes === null || item.dias_restantes === undefined
+                              ? 'Sin fecha próxima'
+                              : formatDaysLeft(item.dias_restantes)}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

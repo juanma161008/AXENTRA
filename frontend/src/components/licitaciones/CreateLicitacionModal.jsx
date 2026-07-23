@@ -6,14 +6,22 @@ import {
   FileText,
   Files,
   Loader2,
+  PlusCircle,
   Search,
   ShieldCheck,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { documentoApi, entidadApi, licitacionApi, normalizeApiError } from '../../api/api';
-import { combineNit, formatCurrency, formatStatusLabel, toProperCase } from '../../utils/workspace';
+import { capitalizeFirst, combineNit, formatCurrency, formatStatusLabel, toProperCase } from '../../utils/workspace';
+import { HITOS } from './Cronograma';
+
+let fechaPersonalizadaSeq = 0;
+const nuevaFechaPersonalizada = () => ({ id: `fp-${(fechaPersonalizadaSeq += 1)}`, nombre: '', fecha: '' });
+
+const initialFechas = () => Object.fromEntries(HITOS.map((hito) => [hito.field, '']));
 
 const initialForm = (defaultCompanyId = '') => ({
   empresaId: defaultCompanyId || '',
@@ -26,9 +34,8 @@ const initialForm = (defaultCompanyId = '') => ({
   objetoContrato: '',
   cuantia: '',
   estado: 'en_busqueda',
-  fechaPublicacion: '',
-  fechaApertura: '',
-  fechaCierre: '',
+  fechas: initialFechas(),
+  fechasPersonalizadas: [],
   urlSecop: '',
   notas: '',
 });
@@ -115,6 +122,33 @@ const CreateLicitacionModal = ({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const handleFechaChange = (field, value) => {
+    setForm((current) => ({ ...current, fechas: { ...current.fechas, [field]: value } }));
+  };
+
+  const handleAddFechaPersonalizada = () => {
+    setForm((current) => ({
+      ...current,
+      fechasPersonalizadas: [...current.fechasPersonalizadas, nuevaFechaPersonalizada()],
+    }));
+  };
+
+  const handleFechaPersonalizadaChange = (id, key, value) => {
+    setForm((current) => ({
+      ...current,
+      fechasPersonalizadas: current.fechasPersonalizadas.map((item) =>
+        item.id === id ? { ...item, [key]: value } : item
+      ),
+    }));
+  };
+
+  const handleRemoveFechaPersonalizada = (id) => {
+    setForm((current) => ({
+      ...current,
+      fechasPersonalizadas: current.fechasPersonalizadas.filter((item) => item.id !== id),
+    }));
+  };
+
   const handleOptionalFile = (key, file) => {
     setOptionalFiles((current) => ({ ...current, [key]: file || null }));
   };
@@ -146,15 +180,18 @@ const CreateLicitacionModal = ({
       return;
     }
 
-    if (!pliegoFile || !rupFile) {
-      setError('Debes adjuntar el pliego y el RUP para continuar.');
-      return;
-    }
-
     setCreating(true);
     setStep('processing');
 
     try {
+      const fechasPayload = Object.fromEntries(
+        HITOS.map((hito) => [hito.field, toIsoDateTime(form.fechas[hito.field])])
+      );
+
+      const fechasPersonalizadas = form.fechasPersonalizadas
+        .filter((item) => item.nombre.trim() && item.fecha)
+        .map((item) => ({ nombre: item.nombre.trim(), fecha: toIsoDateTime(item.fecha) }));
+
       const payload = {
         empresa_id: form.empresaId,
         numero_secop: form.numeroSecop.trim(),
@@ -164,9 +201,8 @@ const CreateLicitacionModal = ({
         objeto_contrato: form.objetoContrato.trim(),
         cuantia: form.cuantia ? Number(form.cuantia) : null,
         estado: form.estado,
-        fecha_publicacion: toIsoDateTime(form.fechaPublicacion),
-        fecha_apertura: toIsoDateTime(form.fechaApertura),
-        fecha_cierre: toIsoDateTime(form.fechaCierre),
+        ...fechasPayload,
+        fechas_personalizadas: fechasPersonalizadas,
         notas: [
           form.notas.trim(),
           form.usaArea && form.areaEntidad.trim() ? `Área de la entidad: ${form.areaEntidad.trim()}` : '',
@@ -213,23 +249,25 @@ const CreateLicitacionModal = ({
 
       let analysis = null;
 
-      try {
-        const analysisResponse = await licitacionApi.analyzePliego(licitacion.id, {
-          file: pliegoFile,
-        });
+      if (pliegoFile) {
+        try {
+          const analysisResponse = await licitacionApi.analyzePliego(licitacion.id, {
+            file: pliegoFile,
+          });
 
-        analysis = analysisResponse.data;
+          analysis = analysisResponse.data;
 
-        await licitacionApi.update(licitacion.id, {
-          pliego_texto: analysis.texto_completo || analysis.texto_preview || null,
-          pliego_url: pliegoFile.name,
-        });
-      } catch (analysisError) {
-        console.warn('No fue posible completar el análisis del pliego', analysisError);
-        toast('La licitación quedó creada, pero el análisis del pliego se puede reintentar desde IA.');
+          await licitacionApi.update(licitacion.id, {
+            pliego_texto: analysis.texto_completo || analysis.texto_preview || null,
+            pliego_url: pliegoFile.name,
+          });
+        } catch (analysisError) {
+          console.warn('No fue posible completar el análisis del pliego', analysisError);
+          toast('La licitación quedó creada, pero el análisis del pliego se puede reintentar desde IA.');
+        }
       }
 
-      toast.success('Licitación creada y documentada con éxito');
+      toast.success('Licitación creada. Arma el checklist manualmente desde el detalle del proceso.');
       setStep('done');
 
       await onCreated?.({
@@ -257,7 +295,7 @@ const CreateLicitacionModal = ({
               Nueva licitación
             </div>
             <h3>Crear proceso y dejarlo listo para trabajar.</h3>
-            <p>Pliego, RUP, checklist y análisis inicial desde el primer minuto.</p>
+            <p>El checklist se arma manualmente después de crear el proceso. Adjuntar pliego/RUP es opcional.</p>
           </div>
 
           <button className="icon-btn icon-btn--ghost" type="button" onClick={onClose}>
@@ -272,7 +310,7 @@ const CreateLicitacionModal = ({
             <div className="form-section">
               <h4>Datos del proceso</h4>
 
-              <label className="field">
+              <label className="field field--required">
                 <span className="field__label">Empresa propietaria <span className="field__required">*</span></span>
                 <div className="field__control">
                   <Building2 size={18} />
@@ -287,7 +325,7 @@ const CreateLicitacionModal = ({
               </label>
 
               <div className="field-grid field-grid--2">
-                <label className="field">
+                <label className="field field--required">
                   <span className="field__label">Número de proceso <span className="field__required">*</span></span>
                   <div className="field__control">
                     <FileText size={18} />
@@ -315,7 +353,7 @@ const CreateLicitacionModal = ({
               </div>
 
               <div className="field-grid field-grid--2">
-                <label className="field">
+                <label className="field field--required">
                   <span className="field__label">NIT base <span className="field__required">*</span> (busca primero, así no reescribes la entidad)</span>
                   <div className="field__control">
                     <Search size={18} />
@@ -328,7 +366,7 @@ const CreateLicitacionModal = ({
                   </div>
                 </label>
 
-                <label className="field">
+                <label className="field field--required">
                   <span className="field__label">DV <span className="field__required">*</span></span>
                   <div className="field__control">
                     <input
@@ -340,7 +378,7 @@ const CreateLicitacionModal = ({
                 </label>
               </div>
 
-              <label className="field">
+              <label className="field field--required">
                 <span className="field__label">
                   Entidad contratante <span className="field__required">*</span>
                   {entidadStatus === 'buscando' ? <span className="entidad-status">Buscando por NIT...</span> : null}
@@ -351,7 +389,7 @@ const CreateLicitacionModal = ({
                   <Building2 size={18} />
                   <input
                     value={form.entidadContratante}
-                    onChange={(event) => handleChange('entidadContratante', event.target.value)}
+                    onChange={(event) => handleChange('entidadContratante', capitalizeFirst(event.target.value))}
                     placeholder="Escribe el NIT arriba para autocompletar, o digítala aquí"
                   />
                 </div>
@@ -383,68 +421,93 @@ const CreateLicitacionModal = ({
                   <input
                     disabled={!form.usaArea}
                     value={form.areaEntidad}
-                    onChange={(event) => handleChange('areaEntidad', event.target.value)}
+                    onChange={(event) => handleChange('areaEntidad', capitalizeFirst(event.target.value))}
                     placeholder="Dependencia / área"
                   />
                 </div>
               </label>
 
-              <label className="field">
+              <label className="field field--required">
                 <span className="field__label">Objeto del contrato <span className="field__required">*</span></span>
                 <textarea
                   rows={4}
                   value={form.objetoContrato}
-                  onChange={(event) => handleChange('objetoContrato', event.target.value)}
+                  onChange={(event) => handleChange('objetoContrato', capitalizeFirst(event.target.value))}
                   placeholder="Describe el objeto contractual"
                 />
               </label>
 
-              <div className="field-grid field-grid--2">
-                <label className="field">
-                  <span className="field__label">Fecha publicación</span>
-                  <input
-                    type="date"
-                    value={form.fechaPublicacion}
-                    onChange={(event) => handleChange('fechaPublicacion', event.target.value)}
-                  />
-                </label>
+              <label className="field">
+                <span className="field__label">URL SECOP</span>
+                <input
+                  value={form.urlSecop}
+                  onChange={(event) => handleChange('urlSecop', event.target.value)}
+                  placeholder="https://..."
+                />
+              </label>
 
-                <label className="field">
-                  <span className="field__label">Fecha apertura</span>
-                  <input
-                    type="date"
-                    value={form.fechaApertura}
-                    onChange={(event) => handleChange('fechaApertura', event.target.value)}
-                  />
-                </label>
+              <h4>Cronograma (puedes ajustarlo después desde el detalle del proceso)</h4>
+              <div className="field-grid field-grid--2">
+                {HITOS.map((hito) => (
+                  <label className="field" key={hito.field}>
+                    <span className="field__label">{hito.label}</span>
+                    <input
+                      type="date"
+                      value={form.fechas[hito.field]}
+                      onChange={(event) => handleFechaChange(hito.field, event.target.value)}
+                    />
+                  </label>
+                ))}
               </div>
 
-              <div className="field-grid field-grid--2">
-                <label className="field">
-                  <span className="field__label">Fecha cierre</span>
-                  <input
-                    type="date"
-                    value={form.fechaCierre}
-                    onChange={(event) => handleChange('fechaCierre', event.target.value)}
-                  />
-                </label>
+              {form.fechasPersonalizadas.length > 0 ? (
+                <div className="field-grid field-grid--2">
+                  {form.fechasPersonalizadas.map((item) => (
+                    <React.Fragment key={item.id}>
+                      <label className="field">
+                        <span className="field__label">Nombre de la fecha</span>
+                        <input
+                          value={item.nombre}
+                          onChange={(event) =>
+                            handleFechaPersonalizadaChange(item.id, 'nombre', capitalizeFirst(event.target.value))
+                          }
+                          placeholder="Ej. Audiencia de aclaraciones"
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field__label">Fecha</span>
+                        <div className="field__control">
+                          <input
+                            type="date"
+                            value={item.fecha}
+                            onChange={(event) => handleFechaPersonalizadaChange(item.id, 'fecha', event.target.value)}
+                          />
+                          <button
+                            className="icon-btn icon-btn--ghost icon-btn--danger"
+                            type="button"
+                            onClick={() => handleRemoveFechaPersonalizada(item.id)}
+                            title="Quitar esta fecha"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </label>
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
 
-                <label className="field">
-                  <span className="field__label">URL SECOP</span>
-                  <input
-                    value={form.urlSecop}
-                    onChange={(event) => handleChange('urlSecop', event.target.value)}
-                    placeholder="https://..."
-                  />
-                </label>
-              </div>
+              <button className="btn btn--secondary" type="button" onClick={handleAddFechaPersonalizada}>
+                <PlusCircle size={16} />
+                Agregar fecha
+              </button>
 
               <label className="field">
                 <span className="field__label">Notas</span>
                 <textarea
                   rows={3}
                   value={form.notas}
-                  onChange={(event) => handleChange('notas', event.target.value)}
+                  onChange={(event) => handleChange('notas', capitalizeFirst(event.target.value))}
                   placeholder="Observaciones internas"
                 />
               </label>
@@ -454,7 +517,7 @@ const CreateLicitacionModal = ({
           <aside className="create-side">
             <div className="info-block">
               <div className="info-block__header">
-                <h4>Checklist previo</h4>
+                <h4>Documentos (opcionales)</h4>
               </div>
 
               <div className="mini-checklist">
@@ -462,14 +525,14 @@ const CreateLicitacionModal = ({
                   <div className={`status-dot status-dot--${pliegoFile ? 'success' : 'neutral'}`} />
                   <div className="mini-checklist__copy">
                     <strong>Pliego (de la entidad contratante)</strong>
-                    <span>{pliegoFile ? pliegoFile.name : 'Obligatorio'}</span>
+                    <span>{pliegoFile ? pliegoFile.name : 'Opcional'}</span>
                   </div>
                 </div>
                 <div className="mini-checklist__item">
                   <div className={`status-dot status-dot--${rupFile ? 'success' : 'neutral'}`} />
                   <div className="mini-checklist__copy">
                     <strong>RUP (de tu empresa)</strong>
-                    <span>{rupFile ? rupFile.name : 'Obligatorio'}</span>
+                    <span>{rupFile ? rupFile.name : 'Opcional'}</span>
                   </div>
                 </div>
                 {isAdmin
@@ -488,7 +551,7 @@ const CreateLicitacionModal = ({
 
             <div className="upload-card">
               <div className="upload-card__item">
-                <span>Pliego <span className="field__required">*</span> — documento de la entidad contratante</span>
+                <span>Pliego (opcional) — documento de la entidad contratante</span>
                 <label className="upload-zone">
                   <Upload size={18} />
                   <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(event) => setPliegoFile(event.target.files?.[0] || null)} />
@@ -497,7 +560,7 @@ const CreateLicitacionModal = ({
               </div>
 
               <div className="upload-card__item">
-                <span>RUP <span className="field__required">*</span> — de tu empresa (la que se va a postular)</span>
+                <span>RUP (opcional) — de tu empresa (la que se va a postular)</span>
                 <label className="upload-zone">
                   <Upload size={18} />
                   <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(event) => setRupFile(event.target.files?.[0] || null)} />
@@ -546,7 +609,7 @@ const CreateLicitacionModal = ({
                 <CheckCircle2 size={20} />
                 <div>
                   <strong>Licitación creada</strong>
-                  <span>El proceso, documentos y análisis quedaron listos.</span>
+                  <span>Arma el checklist manualmente desde el detalle del proceso.</span>
                 </div>
               </div>
             ) : null}
@@ -564,7 +627,7 @@ const CreateLicitacionModal = ({
                 Guardando...
               </>
             ) : (
-              'Crear y analizar'
+              'Crear licitación'
             )}
           </button>
         </div>

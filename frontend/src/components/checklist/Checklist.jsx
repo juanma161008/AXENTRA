@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   CircleDashed,
   CircleDotDashed,
@@ -15,8 +16,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { documentoApi, licitacionApi, normalizeApiError, requisitoApi } from '../../api/api';
-import { toProperCase } from '../../utils/workspace';
+import { formatDateLong, toProperCase } from '../../utils/workspace';
+import { resolverAperturaPliego } from '../../utils/pliego';
 import LicitacionSelector from '../shared/LicitacionSelector';
+import PliegoViewerModal from '../licitaciones/PliegoViewerModal';
 
 const CATEGORIA_LABELS = {
   habilitante: 'Habilitante',
@@ -42,10 +45,15 @@ const Checklist = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploadingKey, setUploadingKey] = useState('');
+  const [togglingKey, setTogglingKey] = useState('');
+  const [subsanarKey, setSubsanarKey] = useState('');
+  const [subsanarNota, setSubsanarNota] = useState('');
+  const [savingSubsanar, setSavingSubsanar] = useState(false);
   const [newRequisitoNombre, setNewRequisitoNombre] = useState('');
   const [newRequisitoObligatorio, setNewRequisitoObligatorio] = useState(true);
   const [savingRequisito, setSavingRequisito] = useState(false);
   const [addingSuggestion, setAddingSuggestion] = useState('');
+  const [pliegoViewer, setPliegoViewer] = useState({ open: false, documentoId: null, query: '' });
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
@@ -133,7 +141,7 @@ const Checklist = ({
     setUploadingKey(item.key);
 
     try {
-      await documentoApi.upload({
+      const uploaded = await documentoApi.upload({
         empresaId: selectedCompany.id,
         licitacionId: selectedLicitacionId,
         file,
@@ -148,13 +156,75 @@ const Checklist = ({
         },
       });
 
-      toast.success(`${item.nombre} cargado correctamente`);
+      // Adjuntar el documento es una comodidad: marca el item como cumplido automáticamente,
+      // pero no es obligatorio (la persona igual puede marcar el checkbox sin subir nada).
+      await licitacionApi.actualizarChecklistItem(selectedLicitacionId, item.key, {
+        cumplido: true,
+        documento_id: uploaded?.data?.id,
+      });
+
+      toast.success(`${item.nombre} cargado y marcado como cumplido`);
       await onRefreshWorkspace?.();
       await refreshExplorer();
     } catch (err) {
       toast.error(normalizeApiError(err, 'No fue posible cargar el documento'));
     } finally {
       setUploadingKey('');
+    }
+  };
+
+  const handleToggleCumplido = async (item, checked) => {
+    if (!selectedLicitacionId) return;
+
+    setTogglingKey(item.key);
+
+    try {
+      await licitacionApi.actualizarChecklistItem(selectedLicitacionId, item.key, { cumplido: checked });
+      await refreshExplorer();
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible actualizar el checklist'));
+    } finally {
+      setTogglingKey('');
+    }
+  };
+
+  const handleOpenSubsanar = (item) => {
+    setSubsanarKey(item.key);
+    setSubsanarNota(item.notas_subsanacion || '');
+  };
+
+  const handleSubmitSubsanar = async (event) => {
+    event.preventDefault();
+    if (!subsanarKey || !selectedLicitacionId) return;
+
+    setSavingSubsanar(true);
+
+    try {
+      await licitacionApi.marcarSubsanar(selectedLicitacionId, subsanarKey, subsanarNota.trim() || null);
+      toast.success('Item marcado para subsanar');
+      setSubsanarKey('');
+      setSubsanarNota('');
+      await refreshExplorer();
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible marcar el item para subsanar'));
+    } finally {
+      setSavingSubsanar(false);
+    }
+  };
+
+  const handleResolverSubsanar = async (item) => {
+    if (!selectedLicitacionId) return;
+
+    setTogglingKey(item.key);
+
+    try {
+      await licitacionApi.resolverSubsanar(selectedLicitacionId, item.key);
+      toast.success('Subsanación resuelta');
+      await refreshExplorer();
+    } catch (err) {
+      toast.error(normalizeApiError(err, 'No fue posible quitar la marca de subsanación'));
+    } finally {
+      setTogglingKey('');
     }
   };
 
@@ -250,6 +320,15 @@ const Checklist = ({
     } finally {
       setAddingSuggestion('');
     }
+  };
+
+  const handleVerEnPliego = (texto) => {
+    const resultado = resolverAperturaPliego(data?.documentos || [], texto);
+    if (!resultado.ok) {
+      toast.error('Vuelve a analizar el pliego desde IA para poder verlo en el PDF (los análisis anteriores no guardaron el archivo).');
+      return;
+    }
+    setPliegoViewer({ open: true, documentoId: resultado.documentoId, query: resultado.query });
   };
 
   return (
@@ -348,7 +427,7 @@ const Checklist = ({
             <div className="surface-panel__header">
               <div>
                 <h3>Documentos obligatorios</h3>
-                <p>Cuando subes un archivo, el estado pasa a verde .</p>
+                <p>Marca el checkbox cuando el requisito quede cumplido. Adjuntar un archivo es opcional.</p>
               </div>
               <div className={`status-chip status-chip--${progress >= 100 ? 'success' : 'warning'}`}>
                 {progress}% completado
@@ -357,6 +436,7 @@ const Checklist = ({
 
             <div className="checklist-table">
               <div className="checklist-table__head">
+                <span />
                 <span>Documento</span>
                 <span>Categoría</span>
                 <span>Estado</span>
@@ -371,74 +451,152 @@ const Checklist = ({
                 </div>
               ) : (
                 items.map((item) => {
-                  const tone = item.cumple ? 'success' : 'warning';
+                  const tone = item.cumple ? 'success' : item.requiere_subsanacion ? 'danger' : 'warning';
+                  const busy = uploadingKey === item.key || togglingKey === item.key;
 
                   return (
-                    <div key={item.key} className="checklist-row">
-                      <div className="checklist-row__copy">
-                        <strong>{item.nombre}</strong>
-                        <span>{item.descripcion}</span>
-                      </div>
-                      <span className="checklist-row__category">{formatCategoria(item.categoria)}</span>
-                      <span className={`status-chip status-chip--${tone}`}>
-                        {item.cumple ? 'Cumple' : 'Pendiente'}
-                      </span>
-                      <div className="checklist-row__actions">
-                      <label className="upload-chip">
+                    <React.Fragment key={item.key}>
+                      <div className="checklist-row">
                         <input
-                          type="file"
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (file) {
-                              handleUpload(item, file);
-                            }
-                            event.target.value = '';
-                          }}
-                          disabled={uploadingKey === item.key}
+                          type="checkbox"
+                          className="checklist-row__checkbox"
+                          checked={Boolean(item.cumple)}
+                          disabled={busy}
+                          onChange={(event) => handleToggleCumplido(item, event.target.checked)}
+                          title="Marcar como cumplido"
                         />
-                        {uploadingKey === item.key ? 'Subiendo...' : 'Cargar'}
-                      </label>
+                        <div className="checklist-row__copy">
+                          <strong>{item.nombre}</strong>
+                          <span>{item.descripcion}</span>
+                          <span className="checklist-row__validado">
+                            {item.validado_en
+                              ? `Validado por ${item.validado_por_nombre || 'usuario'} · ${formatDateLong(item.validado_en)}`
+                              : 'Sin validar todavía'}
+                          </span>
+                        </div>
+                        <span className="checklist-row__category">{formatCategoria(item.categoria)}</span>
+                        <div className="checklist-row__estado-col">
+                          <span className={`status-chip status-chip--${tone}`}>
+                            {item.cumple ? 'Cumplido' : item.requiere_subsanacion ? 'A subsanar' : 'Pendiente'}
+                          </span>
+                          {item.requiere_subsanacion && item.notas_subsanacion ? (
+                            <span className="checklist-row__subsanar-nota" title={item.notas_subsanacion}>
+                              {item.notas_subsanacion}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="checklist-row__actions">
+                        <label className="upload-chip">
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                handleUpload(item, file);
+                              }
+                              event.target.value = '';
+                            }}
+                            disabled={busy}
+                          />
+                          {uploadingKey === item.key ? 'Subiendo...' : 'Cargar (opcional)'}
+                        </label>
 
-                      {item.cumple && item.documento_id ? (
-                        <button
-                          className="icon-btn icon-btn--ghost icon-btn--danger"
-                          type="button"
-                          style={{ flex: '0 0 auto' }}
-                          onClick={() => handleDeleteDocumento(item)}
-                          disabled={uploadingKey === item.key}
-                          title="Eliminar el documento cargado (borra el archivo)"
-                        >
-                          <FileX size={16} />
-                        </button>
-                      ) : null}
+                        {item.cumple && item.documento_id ? (
+                          <button
+                            className="icon-btn icon-btn--ghost icon-btn--danger"
+                            type="button"
+                            style={{ flex: '0 0 auto' }}
+                            onClick={() => handleDeleteDocumento(item)}
+                            disabled={busy}
+                            title="Eliminar el documento cargado (borra el archivo)"
+                          >
+                            <FileX size={16} />
+                          </button>
+                        ) : null}
 
-                      {item.excluible ? (
-                        <button
-                          className="icon-btn icon-btn--ghost"
-                          type="button"
-                          style={{ flex: '0 0 auto' }}
-                          onClick={() => handleExcludeObligatorio(item)}
-                          disabled={uploadingKey === item.key}
-                          title="Quitar del checklist (no borra ningún documento)"
-                        >
-                          <ListX size={16} />
-                        </button>
-                      ) : null}
+                        {!item.cumple && !item.requiere_subsanacion ? (
+                          <button
+                            className="icon-btn icon-btn--ghost"
+                            type="button"
+                            style={{ flex: '0 0 auto' }}
+                            onClick={() => handleOpenSubsanar(item)}
+                            disabled={busy}
+                            title="Marcar para subsanar (entra al semáforo de alertas)"
+                          >
+                            <AlertTriangle size={16} />
+                          </button>
+                        ) : null}
 
-                      {item.personalizado ? (
-                        <button
-                          className="icon-btn icon-btn--ghost"
-                          type="button"
-                          style={{ flex: '0 0 auto' }}
-                          onClick={() => handleDeleteRequisito(item.requisito_id)}
-                          title="Quitar requisito del checklist (no borra ningún documento)"
-                        >
-                          <ListX size={16} />
-                        </button>
-                      ) : null}
+                        {item.requiere_subsanacion ? (
+                          <button
+                            className="icon-btn icon-btn--ghost"
+                            type="button"
+                            style={{ flex: '0 0 auto' }}
+                            onClick={() => handleResolverSubsanar(item)}
+                            disabled={busy}
+                            title="Quitar la marca de subsanación"
+                          >
+                            <CheckCircle2 size={16} />
+                          </button>
+                        ) : null}
+
+                        {item.excluible ? (
+                          <button
+                            className="icon-btn icon-btn--ghost"
+                            type="button"
+                            style={{ flex: '0 0 auto' }}
+                            onClick={() => handleExcludeObligatorio(item)}
+                            disabled={busy}
+                            title="Quitar del checklist (no borra ningún documento)"
+                          >
+                            <ListX size={16} />
+                          </button>
+                        ) : null}
+
+                        {item.personalizado ? (
+                          <button
+                            className="icon-btn icon-btn--ghost"
+                            type="button"
+                            style={{ flex: '0 0 auto' }}
+                            onClick={() => handleDeleteRequisito(item.requisito_id)}
+                            title="Quitar requisito del checklist (no borra ningún documento)"
+                          >
+                            <ListX size={16} />
+                          </button>
+                        ) : null}
+                        </div>
                       </div>
-                    </div>
+
+                      {subsanarKey === item.key ? (
+                        <form className="checklist-subsanar-form" onSubmit={handleSubmitSubsanar}>
+                          <label className="field">
+                            <span className="field__label">¿Qué hay que corregir en "{item.nombre}"?</span>
+                            <textarea
+                              value={subsanarNota}
+                              onChange={(event) => setSubsanarNota(event.target.value)}
+                              placeholder="Ej. El documento está vencido, falta la firma, etc."
+                              autoFocus
+                            />
+                          </label>
+                          <div className="checklist-subsanar-form__actions">
+                            <button
+                              className="btn btn--ghost"
+                              type="button"
+                              onClick={() => {
+                                setSubsanarKey('');
+                                setSubsanarNota('');
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                            <button className="btn btn--primary" type="submit" disabled={savingSubsanar}>
+                              {savingSubsanar ? 'Guardando...' : 'Marcar a subsanar'}
+                            </button>
+                          </div>
+                        </form>
+                      ) : null}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -490,9 +648,14 @@ const Checklist = ({
                 {suggestions.map((texto) => (
                   <div key={texto} className="mini-checklist__item">
                     <Lightbulb size={16} className="text-accent" />
-                    <div className="mini-checklist__copy">
+                    <button
+                      type="button"
+                      className="mini-checklist__copy mini-checklist__copy--clickable"
+                      onClick={() => handleVerEnPliego(texto)}
+                      title="Ver y subrayar en el PDF del pliego"
+                    >
                       <span>{texto}</span>
-                    </div>
+                    </button>
                     <button
                       className="btn btn--secondary"
                       type="button"
@@ -508,6 +671,13 @@ const Checklist = ({
           ) : null}
         </>
       )}
+
+      <PliegoViewerModal
+        open={pliegoViewer.open}
+        documentoId={pliegoViewer.documentoId}
+        query={pliegoViewer.query}
+        onClose={() => setPliegoViewer({ open: false, documentoId: null, query: '' })}
+      />
     </div>
   );
 };

@@ -138,12 +138,21 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+
+    # El auto-reload de uvicorn corre el worker real en un subproceso aparte
+    # (traspasando el socket ya escuchando). En algunos entornos ese traspaso
+    # queda roto: el proceso arranca y responde a la primera, pero las
+    # conexiones siguientes se resetean solas sin que el proceso se caiga.
+    # Por eso queda apagado por defecto; se puede reactivar con RELOAD=true
+    # en .env si en tu maquina no da ese problema.
+    reload_enabled = os.getenv("RELOAD", "false").strip().lower() in ("1", "true", "yes")
+
     uvicorn.run(
         "main:app",
         host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", 8001)),
-        reload=True,
-        reload_dirs=[os.path.join(os.path.dirname(__file__), "src")],
-        reload_includes=["main.py"],
-        reload_excludes=["*.log", "*.txt", "*.zip", "*.env"]
+        reload=reload_enabled,
+        reload_dirs=[os.path.join(os.path.dirname(__file__), "src")] if reload_enabled else None,
+        reload_includes=["main.py"] if reload_enabled else None,
+        reload_excludes=["*.log", "*.txt", "*.zip", "*.env"] if reload_enabled else None,
     )

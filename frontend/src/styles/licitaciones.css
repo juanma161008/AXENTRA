@@ -369,6 +369,12 @@
   flex-wrap: wrap;
 }
 
+.lic-detail__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .lic-estado-select {
   display: inline-flex;
   align-items: center;
@@ -502,6 +508,20 @@
   border: 1px solid var(--border-color);
 }
 
+.lic-checklist__checkbox {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.lic-checklist__validado {
+  font-size: 11px;
+  color: var(--success);
+  font-weight: 600;
+}
+
 .lic-checklist__copy {
   flex: 1;
   min-width: 0;
@@ -532,6 +552,107 @@
   flex-wrap: wrap;
 }
 
+/* ---------- Cronograma (stepper de fechas clave) ---------- */
+
+.cronograma__list {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.cronograma__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 110px;
+  min-width: 110px;
+  padding: 0 6px;
+  text-align: center;
+}
+
+.cronograma__step::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-color);
+  z-index: 0;
+}
+
+.cronograma__step:first-child::before {
+  display: none;
+}
+
+.cronograma__step--completado::before {
+  background: var(--success);
+}
+
+.cronograma__dot {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border-color);
+}
+
+.cronograma__step--completado .cronograma__dot {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.cronograma__step--en_curso .cronograma__dot {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+}
+
+.cronograma__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cronograma__date {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.cronograma__status {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.cronograma__step--completado .cronograma__status {
+  color: var(--success);
+}
+
+.cronograma__step--en_curso .cronograma__status {
+  color: var(--primary-strong);
+}
+
+.cronograma__edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .cronograma__edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .lic-pliego-preview {
   margin: 0;
   padding: 14px;
@@ -541,6 +662,21 @@
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text-secondary);
+}
+
+.lic-pliego-preview--clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.lic-pliego-preview--clickable:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--text-primary);
 }
 
 .lic-empty {
@@ -587,6 +723,75 @@
   color: var(--danger);
   font-size: 14px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- Visor embebido del pliego (subrayado de coincidencias) ---------- */
+
+.pliego-viewer__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pliego-viewer__page-indicator {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pliego-viewer__zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.pliego-viewer__body {
+  /* Nada de flex + justify-content:center aqui: con overflow:auto, centrar por flexbox
+     hace que el navegador no deje scrollear hasta el borde del contenido que se sale del
+     contenedor (bug conocido de flex centering + overflow). Centrar con margin:auto en el
+     hijo si permite scrollear normalmente en cualquier nivel de zoom. */
+  padding: 20px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.pliego-viewer__page {
+  position: relative;
+  line-height: 0;
+  width: fit-content;
+  margin: 0 auto;
+  box-shadow: var(--shadow-lg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pliego-viewer__page canvas {
+  display: block;
+}
+
+.pliego-viewer__highlight {
+  position: absolute;
+  background: rgba(250, 204, 21, 0.45);
+  outline: 2px solid rgba(217, 119, 6, 0.85);
+  border-radius: 2px;
+  pointer-events: none;
+  animation: pliego-highlight-pulse 1.6s ease-in-out 2;
+}
+
+@keyframes pliego-highlight-pulse {
+  0%, 100% {
+    background: rgba(250, 204, 21, 0.45);
+  }
+  50% {
+    background: rgba(250, 204, 21, 0.75);
+  }
 }
 
 /* ---------- Responsive ---------- */

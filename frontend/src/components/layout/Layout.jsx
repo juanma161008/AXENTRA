@@ -4,7 +4,6 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  FileText,
   LayoutDashboard,
   Library,
   Menu,
@@ -26,7 +25,6 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, caption: 'Resumen ejecutivo' },
   { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban, caption: 'Crear y seguir procesos' },
   { id: 'biblioteca', label: 'Biblioteca', icon: Library, caption: 'Explorer documental' },
-  { id: 'checklist', label: 'Checklist', icon: FileText, caption: 'Documentos obligatorios' },
   { id: 'ia', label: 'IA', icon: Sparkles, caption: 'OCR y análisis' },
   { id: 'reportes', label: 'Reportes', icon: BarChart3, caption: 'KPIs y exportación' },
 ];

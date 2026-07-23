@@ -188,7 +188,12 @@ INDICADORES_FINANCIEROS_DEF = {
 # Patrones para intentar detectar, en el pliego, el minimo/maximo exigido para cada indicador.
 # Son heuristicos (el texto del pliego varia mucho): si no encuentran nada, el usuario lo
 # digita a mano y ese valor manual siempre tiene prioridad.
-_REQUISITO_KEYWORDS = r"(?:mayor\s+o\s+igual\s+a|superior\s+o\s+igual\s+a|mínimo|minimo|no\s+inferior\s+a|inferior\s+o\s+igual\s+a|máximo|maximo|no\s+superior\s+a)"
+_REQUISITO_KEYWORDS = (
+    r"(?:mayor\s+o\s+igual\s+a|superior\s+o\s+igual\s+a|igual\s+o\s+superior\s+a|"
+    r"m[ií]nimo|no\s+inferior\s+a|no\s+menor\s+a|inferior\s+o\s+igual\s+a|"
+    r"menor\s+o\s+igual\s+a|igual\s+o\s+inferior\s+a|m[áa]ximo|no\s+superior\s+a|"
+    r"hasta|>=|=>|≥|<=|=<|≤)"
+)
 
 
 def _parse_decimal_co(valor: Any) -> Optional[float]:
@@ -250,16 +255,26 @@ def extraer_indicadores_financieros_rup(texto: str) -> Dict[str, Dict[str, Any]]
 
 def extraer_requisitos_financieros_pliego(texto: str) -> Dict[str, Dict[str, Any]]:
     """Intento heuristico de detectar, en el pliego, el minimo/maximo exigido por indicador.
-    Es un punto de partida (OCR); el usuario siempre puede corregirlo a mano."""
+    Es un punto de partida (OCR); el usuario siempre puede corregirlo a mano.
+
+    Primero busca la frase explicita de minimo/maximo ("mayor o igual a", ">=", etc.). Si el
+    pliego no usa ninguna de esas frases (muchos solo traen una tabla plana "INDICADOR : valor",
+    igual que el RUP), cae al mismo patron tolerante que se usa para leer el RUP."""
     if not texto:
         return {}
 
     resultado = {}
     for key, definicion in INDICADORES_FINANCIEROS_DEF.items():
-        patron = rf"{definicion['label']}[^\n]{{0,100}}?{_REQUISITO_KEYWORDS}[^\d]{{0,15}}([\d.,]+)"
-        match = re.search(patron, texto, re.IGNORECASE)
+        match = re.search(
+            rf"{definicion['label']}[^\n]{{0,120}}?{_REQUISITO_KEYWORDS}[^\d]{{0,15}}([\d.,]+)",
+            texto,
+            re.IGNORECASE,
+        )
+        if not match:
+            match = re.search(definicion["patron"], texto, re.IGNORECASE)
         if not match:
             continue
+
         valor = _parse_decimal_co(match.group(1))
         if valor is None:
             continue
@@ -440,6 +455,63 @@ def extract_text_from_pdf_bytes(file_bytes: bytes) -> Dict[str, Any]:
     }
 
 
+def buscar_posicion_en_pdf(file_bytes: bytes, query: str) -> Optional[Dict[str, Any]]:
+    """Busca en que pagina de un PDF aparece un fragmento de texto, usando el texto real
+    del PDF (no el texto ya extraido por nuestro OCR), y devuelve tambien los rectangulos
+    exactos donde aparece (en coordenadas PDF) para poder subrayarlo en el visor del
+    frontend en vez de solo saltar a la pagina y dejar que el usuario lo busque a ojo."""
+    if fitz is None or not query:
+        return None
+
+    consulta = re.sub(r"\s+", " ", query).strip()[:80]
+    if not consulta:
+        return None
+
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception:
+        return None
+
+    try:
+        def _buscar_rects(needle: str):
+            for page_number, page in enumerate(doc, start=1):
+                try:
+                    rects = page.search_for(needle, quads=False)
+                except Exception:
+                    rects = []
+                if rects:
+                    return page_number, page.rect.width, page.rect.height, [
+                        [rect.x0, rect.y0, rect.x1, rect.y1] for rect in rects
+                    ]
+            return None
+
+        # fitz.search_for tolera diferencias menores de espacio pero necesita el texto
+        # tal cual aparece en el PDF; si el fragmento completo no calza (por diferencias
+        # del OCR), se reintenta con un prefijo mas corto pero todavia distintivo.
+        encontrado = _buscar_rects(consulta)
+        consulta_corta = consulta[:40]
+        if not encontrado and len(consulta_corta) >= 15:
+            encontrado = _buscar_rects(consulta_corta)
+
+        if encontrado:
+            page_number, width, height, rects = encontrado
+            return {"pagina": page_number, "rects": rects, "page_width": width, "page_height": height}
+
+        # Ni siquiera search_for encontro nada (texto quizas partido en varias lineas
+        # de forma que PyMuPDF no lo reconoce como una sola cadena); se cae al menos a
+        # ubicar la pagina por substring sobre el texto normalizado, sin rectangulos.
+        consulta_norm = re.sub(r"\s+", " ", consulta).lower()
+        consulta_norm_corta = consulta_norm[:40]
+        for page_number, page in enumerate(doc, start=1):
+            texto_pagina = re.sub(r"\s+", " ", page.get_text("text") or "").lower()
+            if consulta_norm in texto_pagina or (len(consulta_norm_corta) >= 15 and consulta_norm_corta in texto_pagina):
+                return {"pagina": page_number, "rects": [], "page_width": page.rect.width, "page_height": page.rect.height}
+
+        return None
+    finally:
+        doc.close()
+
+
 def extract_text_from_file_bytes(file_bytes: bytes, filename: str = "") -> Dict[str, Any]:
     ext = os.path.splitext((filename or "").lower())[1]
     if ext in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}:
@@ -469,31 +541,98 @@ def extract_text_from_file_bytes(file_bytes: bytes, filename: str = "") -> Dict[
     }
 
 
+
+# Encabezado tolerante: "EXPERIENCIA No.1:", "EXPERIENCIA No 1", "EXPERIENCIA N°1 -",
+# "EXPERIENCIA PROBABLE No.1:", etc. El OCR de distintas entidades/RUP nunca produce
+# exactamente el mismo formato, asi que el separador entre "No" y el numero, y el que
+# cierra el encabezado (":" o "-"), son opcionales.
+_EXPERIENCIA_ENCABEZADO = r"(?:\*{0,3}\s*)?EXPERIENCIA(?:\s+PROBABLE)?\s*N[o°]?\.?\s*(\d+)\s*[:\-]?\s*"
+
 EXPERIENCE_BLOCK_RE = re.compile(
-    r"(?:\*{0,3}\s*)?EXPERIENCIA\s*No\.(\d+)\s*:(.*?)(?=(?:\*{0,3}\s*)?EXPERIENCIA\s*No\.\d+\s*:|$)",
+    rf"{_EXPERIENCIA_ENCABEZADO}(.*?)(?={_EXPERIENCIA_ENCABEZADO}|\Z)",
     re.DOTALL | re.IGNORECASE,
 )
 
-UNSPSC_RE = re.compile(r"(\d{2})\s+(\d{2})\s+(\d{2})\s+(\d{2})\s*:\s*(.+)", re.IGNORECASE)
+# Codigo UNSPSC de 8 digitos en 4 grupos de 2 (segmento-familia-clase-producto). El
+# separador entre grupos puede ser espacio, punto o guion (o ninguno, si viene pegado
+# como "80101706"), y el cierre antes de la descripcion puede ser ":" o "-". Antes esto
+# exigia grupos separados por espacio exacto y ":" fijo, por lo que un pliego o RUP
+# formateado distinto (p.ej. "80.10.17.06 -" o "80101706:") no producia ningun codigo y
+# la comparacion terminaba en "0 coincidencias" sin explicacion.
+UNSPSC_RE = re.compile(
+    r"(\d{2})[\s.\-]?(\d{2})[\s.\-]?(\d{2})[\s.\-]?(\d{2})\s*[:\-]\s*(.+)", re.IGNORECASE
+)
+
+# El RUP real (Certificado de Proponentes que expide cada Camara de Comercio) no trae
+# bloques "EXPERIENCIA No.X:" ni codigos en formato "codigo: descripcion" -- cada contrato
+# reportado empieza con "Numero consecutivo del reporte del contrato ejecutado: N" y sus
+# codigos UNSPSC salen en una tabla "SEGMENTO FAMILIA CLASE PRODUCTO" (dos columnas por
+# linea, sin ninguna descripcion). El "[uú�]" tolera tanto el acento correcto como el
+# caracter de reemplazo "�" que deja un PDF con una codificacion de fuente rara al extraer
+# texto (visto en certificados reales: "N�mero" en vez de "Número").
+_CONSECUTIVO_LABEL = r"N[uú�]mero\s+consecutivo\s+del\s+reporte\s+del\s+contrato\s+ejecutado\s*:\s*(\d+)"
+
+CONSECUTIVO_BLOCK_RE = re.compile(
+    rf"{_CONSECUTIVO_LABEL}(.*?)(?={_CONSECUTIVO_LABEL}|\Z)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+_TABLA_CODIGOS_HEADER_RE = re.compile(r"SEGMENTO\s+FAMILIA\s+CLASE\s+PRODUCTO", re.IGNORECASE)
+_TABLA_CODIGOS_CORTE_RE = re.compile(
+    rf"{_CONSECUTIVO_LABEL}|P[aá�]gina\s*:", re.IGNORECASE
+)
+
+
+def _extraer_codigos_tabla_camara(bloque: str) -> List[Dict[str, Any]]:
+    """Codigos UNSPSC de la tabla 'SEGMENTO FAMILIA CLASE PRODUCTO' del RUP real: sin
+    descripcion, y con el campo PRODUCTO casi siempre en "00" (el RUP acredita a nivel de
+    clase, no de producto especifico) -- por eso el cruce por clase/familia en
+    buscar_coincidencias/comparar_codigos_pliego_rup es el que de verdad encuentra algo
+    contra un codigo exacto exigido por el pliego."""
+    header = _TABLA_CODIGOS_HEADER_RE.search(bloque)
+    if not header:
+        return []
+
+    texto_tabla = bloque[header.end():]
+    corte = _TABLA_CODIGOS_CORTE_RE.search(texto_tabla)
+    if corte:
+        texto_tabla = texto_tabla[: corte.start()]
+
+    codigos: List[Dict[str, Any]] = []
+    vistos = set()
+    for match in re.finditer(r"(\d{2})\s+(\d{2})\s+(\d{2})\s+(\d{2})", texto_tabla):
+        codigo_raw = "".join(match.groups())
+        if codigo_raw in vistos:
+            continue
+        vistos.add(codigo_raw)
+        codigos.append({"codigo": codigo_raw, "codigo_formateado": formatear_codigo(codigo_raw), "descripcion": ""})
+
+    return codigos
 
 
 def extraer_experiencias(texto: str) -> List[Dict[str, Any]]:
     texto = (texto or "").replace("\r", "\n")
     texto = re.sub(r"\n{2,}", "\n", texto)
 
+    bloques = list(EXPERIENCE_BLOCK_RE.finditer(texto))
+    formato_camara = not bloques
+    if formato_camara:
+        bloques = list(CONSECUTIVO_BLOCK_RE.finditer(texto))
+
     experiencias: List[Dict[str, Any]] = []
-    for match in EXPERIENCE_BLOCK_RE.finditer(texto):
+    for match in bloques:
         numero_exp = match.group(1).strip()
         bloque = match.group(2)
 
-        consecutivo = ""
+        consecutivo = numero_exp if formato_camara else ""
         contratista = ""
         contratante = ""
         valor_smmlv = ""
 
-        consecutivo_match = re.search(r"N(?:ÚMERO|UMERO)\s+CONSECUTIVO\s+DEL\s+CONTRATO\s*:\s*(.+)", bloque, re.IGNORECASE)
-        if consecutivo_match:
-            consecutivo = consecutivo_match.group(1).strip().split("\n")[0].strip()
+        if not formato_camara:
+            consecutivo_match = re.search(r"N(?:ÚMERO|UMERO)\s+CONSECUTIVO\s+DEL\s+CONTRATO\s*:\s*(.+)", bloque, re.IGNORECASE)
+            if consecutivo_match:
+                consecutivo = consecutivo_match.group(1).strip().split("\n")[0].strip()
 
         contratista_match = re.search(r"NOMBRE\s+DEL\s+CONTRATISTA\s*:\s*(.+)", bloque, re.IGNORECASE)
         if contratista_match:
@@ -503,13 +642,20 @@ def extraer_experiencias(texto: str) -> List[Dict[str, Any]]:
         if contratante_match:
             contratante = contratante_match.group(1).strip().split("\n")[0].strip()
 
-        valor_match = re.search(r"VALOR\s+CONTRATADO\s+EN\s+SMMLV\s*:\s*(.+)", bloque, re.IGNORECASE)
+        # "VALOR CONTRATADO EN SMMLV:" (formato viejo asumido) o "VALOR DEL CONTRATO
+        # EJECUTADO EXPRESADO EN SMMLV:" (RUP real) -- cualquier texto entre "VALOR" y
+        # "SMMLV" antes de los dos puntos.
+        valor_match = re.search(r"VALOR[^:\n]*SMMLV\s*:\s*(.+)", bloque, re.IGNORECASE)
         if valor_match:
             valor_smmlv = valor_match.group(1).strip().split("\n")[0].strip()
 
         codigos = []
+        vistos_codigo = set()
         for code_match in UNSPSC_RE.finditer(bloque):
             codigo_raw = "".join(code_match.groups()[:4])
+            if codigo_raw in vistos_codigo:
+                continue
+            vistos_codigo.add(codigo_raw)
             descripcion = code_match.group(5).strip()
             codigos.append(
                 {
@@ -518,6 +664,12 @@ def extraer_experiencias(texto: str) -> List[Dict[str, Any]]:
                     "descripcion": descripcion,
                 }
             )
+
+        for item in _extraer_codigos_tabla_camara(bloque):
+            if item["codigo"] in vistos_codigo:
+                continue
+            vistos_codigo.add(item["codigo"])
+            codigos.append(item)
 
         experiencias.append(
             {
@@ -535,12 +687,48 @@ def extraer_experiencias(texto: str) -> List[Dict[str, Any]]:
 
 
 def buscar_coincidencias(experiencias: List[Dict[str, Any]], codigos_usuario: List[str]) -> List[Dict[str, Any]]:
+    """Cruza los codigos que escribio el usuario contra los codigos de cada experiencia del
+    RUP. Si no hay coincidencia exacta de codigo completo (8 digitos: segmento+familia+clase+
+    producto), cae a clase (6 digitos) o familia (4 digitos) -- igual que el comparativo
+    automatico pliego-vs-RUP -- para no perder coincidencias reales solo porque el producto
+    exacto difiere dentro de la misma familia/clase UNSPSC."""
     codigos_usuario = [limpiar_codigo(c) for c in codigos_usuario if limpiar_codigo(c)]
     resultados: List[Dict[str, Any]] = []
 
     for experiencia in experiencias:
         codigos_experiencia = {item["codigo"]: item for item in experiencia["codigos"]}
-        encontrados = [codigo for codigo in codigos_usuario if codigo in codigos_experiencia]
+
+        encontrados: List[str] = []
+        detalle_coincidencias: List[Dict[str, Any]] = []
+
+        for codigo in codigos_usuario:
+            if codigo in codigos_experiencia:
+                encontrados.append(codigo)
+                detalle_coincidencias.append(
+                    {
+                        "codigo": formatear_codigo(codigo),
+                        "descripcion": codigos_experiencia[codigo]["descripcion"],
+                        "nivel_coincidencia": "codigo",
+                    }
+                )
+                continue
+
+            for nivel, largo in (("clase", 6), ("familia", 4)):
+                prefijo = codigo[:largo]
+                item_parcial = next(
+                    (item for otro, item in codigos_experiencia.items() if otro[:largo] == prefijo), None
+                )
+                if item_parcial:
+                    encontrados.append(codigo)
+                    detalle_coincidencias.append(
+                        {
+                            "codigo": formatear_codigo(codigo),
+                            "descripcion": item_parcial["descripcion"],
+                            "nivel_coincidencia": nivel,
+                        }
+                    )
+                    break
+
         if not encontrados:
             continue
 
@@ -553,13 +741,7 @@ def buscar_coincidencias(experiencias: List[Dict[str, Any]], codigos_usuario: Li
                 "valor_smmlv": experiencia["valor_smmlv"],
                 "codigos_encontrados": [formatear_codigo(codigo) for codigo in encontrados],
                 "cantidad_coincidencias": len(encontrados),
-                "detalle_coincidencias": [
-                    {
-                        "codigo": formatear_codigo(codigo),
-                        "descripcion": codigos_experiencia[codigo]["descripcion"],
-                    }
-                    for codigo in encontrados
-                ],
+                "detalle_coincidencias": detalle_coincidencias,
             }
         )
 
@@ -569,21 +751,79 @@ def buscar_coincidencias(experiencias: List[Dict[str, Any]], codigos_usuario: Li
     )
 
 
+_TABLA_PLIEGO_HEADER_RE = re.compile(
+    r"C.digo\s*Segmento\s*C.digo\s*Familia\s*C.digo\s*Clase\s*Descripci.n\s*del\s*producto",
+    re.IGNORECASE,
+)
+_TABLA_PLIEGO_CORTE_RE = re.compile(r"Proyecto de Pliego de Condiciones|P.gina\s*\d+\s*de\s*\d+", re.IGNORECASE)
+_TABLA_PLIEGO_FILA_RE = re.compile(r"(\d{6,8})\s+(\d{6,8})\s+(\d{8})\s+")
+
+
+def _extraer_codigos_tabla_pliego(texto: str) -> List[Dict[str, Any]]:
+    """Tabla real de clasificacion UNSPSC que usan los pliegos: encabezado 'Codigo Segmento
+    / Codigo Familia / Codigo Clase / Descripcion del producto' y, por cada renglon, tres
+    codigos seguidos (uno por linea) mas la descripcion del producto. El codigo de clase
+    (tercero) es el unico que llega confiable a 8 digitos completos -- el de segmento a
+    veces pierde un digito en la extraccion/OCR (p.ej. '9000000' en vez de '90000000') -- y
+    ya incluye segmento+familia en sus primeros 4 digitos, asi que es el que se usa."""
+    if not texto:
+        return []
+
+    header = _TABLA_PLIEGO_HEADER_RE.search(texto)
+    if not header:
+        return []
+
+    texto_tabla = texto[header.end():]
+    corte = _TABLA_PLIEGO_CORTE_RE.search(texto_tabla)
+    if corte:
+        texto_tabla = texto_tabla[: corte.start()]
+
+    filas = list(_TABLA_PLIEGO_FILA_RE.finditer(texto_tabla))
+    resultados: List[Dict[str, Any]] = []
+    vistos = set()
+    for idx, fila in enumerate(filas):
+        codigo_raw = fila.group(3)
+        if codigo_raw in vistos:
+            continue
+        vistos.add(codigo_raw)
+        inicio_desc = fila.end()
+        fin_desc = filas[idx + 1].start() if idx + 1 < len(filas) else len(texto_tabla)
+        descripcion = re.sub(r"\s+", " ", texto_tabla[inicio_desc:fin_desc]).strip()[:200]
+        resultados.append(
+            {"codigo": codigo_raw, "codigo_formateado": formatear_codigo(codigo_raw), "descripcion": descripcion}
+        )
+
+    return resultados
+
+
 def extraer_codigos_pliego(texto: str) -> List[Dict[str, Any]]:
-    """Codigos UNSPSC mencionados en el pliego. A diferencia del RUP, el pliego no trae
-    bloques 'EXPERIENCIA No.X', asi que se busca el patron 'XX XX XX XX: descripcion' en
-    todo el documento."""
+    """Codigos UNSPSC exigidos por el pliego. Se intentan dos formatos reales: la tabla
+    'Codigo Segmento / Familia / Clase / Descripcion del producto' que usan la mayoria de
+    pliegos (ver _extraer_codigos_tabla_pliego), y el patron suelto 'XX XX XX XX: descripcion'
+    que usan otros como prosa."""
     if not texto:
         return []
 
     resultados: List[Dict[str, Any]] = []
     vistos = set()
+
+    for item in _extraer_codigos_tabla_pliego(texto):
+        if item["codigo"] in vistos:
+            continue
+        vistos.add(item["codigo"])
+        resultados.append(item)
+
     for match in UNSPSC_RE.finditer(texto):
         codigo_raw = "".join(match.groups()[:4])
         if codigo_raw in vistos:
             continue
-        vistos.add(codigo_raw)
         descripcion = match.group(5).strip().split("\n")[0][:200]
+        # El patron "XX XX XX XX: algo" tambien calza por coincidencia con codigos
+        # presupuestales, radicados judiciales, etc. que no tienen ninguna descripcion real
+        # al lado (solo mas numeros/puntuacion); exigir letras de verdad filtra ese ruido.
+        if not re.search(r"[a-zA-ZÁÉÍÓÚÑáéíóúñ]{3,}", descripcion):
+            continue
+        vistos.add(codigo_raw)
         resultados.append(
             {
                 "codigo": codigo_raw,
@@ -594,9 +834,53 @@ def extraer_codigos_pliego(texto: str) -> List[Dict[str, Any]]:
     return resultados
 
 
-def comparar_codigos_pliego_rup(pliego_texto: Optional[str], rup_texto: Optional[str]) -> Optional[Dict[str, Any]]:
+_STOPWORDS_OBJETO = {
+    "para", "con", "por", "los", "las", "del", "que", "una", "uno", "sus", "este", "esta",
+    "sobre", "entre", "como", "cada", "todo", "toda", "todos", "todas", "mas", "sin", "segun",
+}
+
+
+def _palabras_significativas(texto: Optional[str]) -> set:
+    palabras = re.findall(r"[a-zA-ZÁÉÍÓÚÑÜáéíóúñü]{4,}", texto or "")
+    return {p.lower() for p in palabras if p.lower() not in _STOPWORDS_OBJETO}
+
+
+def buscar_coincidencias_objeto_contractual(
+    objeto_contrato: Optional[str], experiencias_rup: List[Dict[str, Any]], minimo: int = 2
+) -> List[Dict[str, Any]]:
+    """Complementa la busqueda por codigo UNSPSC: cuando el pliego describe el objeto en
+    prosa (sin codigos claros), compara las palabras clave del objeto del contrato contra
+    las descripciones de cada experiencia del RUP."""
+    palabras_objeto = _palabras_significativas(objeto_contrato)
+    if not palabras_objeto:
+        return []
+
+    resultados = []
+    for experiencia in experiencias_rup:
+        descripciones = " ".join(codigo["descripcion"] for codigo in experiencia["codigos"])
+        palabras_comunes = palabras_objeto & _palabras_significativas(descripciones)
+        if len(palabras_comunes) >= minimo:
+            resultados.append(
+                {
+                    "experiencia_no": experiencia["experiencia_no"],
+                    "contratante": experiencia["contratante"],
+                    "contratista": experiencia["contratista"],
+                    "palabras_comunes": sorted(palabras_comunes),
+                    "cantidad_palabras_comunes": len(palabras_comunes),
+                }
+            )
+
+    return sorted(resultados, key=lambda row: -row["cantidad_palabras_comunes"])[:10]
+
+
+def comparar_codigos_pliego_rup(
+    pliego_texto: Optional[str], rup_texto: Optional[str], objeto_contrato: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """Compara los codigos UNSPSC exigidos por el pliego contra los que aparecen en las
-    experiencias del RUP, para saber cuales ya se pueden acreditar."""
+    experiencias del RUP, para saber cuales ya se pueden acreditar (herramienta integrada
+    de coincidencias RUP x UNSPSC del pliego). Si no hay coincidencia exacta de codigo
+    (8 digitos: segmento+familia+clase+producto), intenta por clase (6 digitos) o familia
+    (4 digitos); y complementa con coincidencias por objeto contractual."""
     if not pliego_texto or not rup_texto:
         return None
 
@@ -614,6 +898,20 @@ def comparar_codigos_pliego_rup(pliego_texto: Optional[str], rup_texto: Optional
                 }
             )
 
+    def _coincidencia(codigo: str) -> Optional[Dict[str, Any]]:
+        if codigo in rup_por_codigo:
+            return {"nivel": "codigo", "experiencias": rup_por_codigo[codigo]}
+
+        for nivel, largo in (("clase", 6), ("familia", 4)):
+            prefijo = codigo[:largo]
+            experiencias = [
+                exp for otro, exps in rup_por_codigo.items() if otro[:largo] == prefijo for exp in exps
+            ]
+            if experiencias:
+                return {"nivel": nivel, "experiencias": experiencias}
+
+        return None
+
     comunes = []
     faltantes = []
     for item in codigos_pliego:
@@ -622,16 +920,31 @@ def comparar_codigos_pliego_rup(pliego_texto: Optional[str], rup_texto: Optional
             "codigo_formateado": item["codigo_formateado"],
             "descripcion_pliego": item["descripcion"],
         }
-        if item["codigo"] in rup_por_codigo:
-            comunes.append({**entry, "experiencias_rup": rup_por_codigo[item["codigo"]]})
+        coincidencia = _coincidencia(item["codigo"])
+        if coincidencia:
+            comunes.append({**entry, "experiencias_rup": coincidencia["experiencias"], "nivel_coincidencia": coincidencia["nivel"]})
         else:
             faltantes.append(entry)
+
+    # Diagnostico para cuando "0 coincidencias" en realidad significa que no se pudo
+    # extraer nada de uno de los dos documentos (formato distinto al esperado, OCR
+    # ilegible, etc.), en vez de que de verdad no haya cruce entre pliego y RUP.
+    diagnostico = None
+    if not codigos_pliego:
+        diagnostico = "sin_codigos_pliego"
+    elif not experiencias_rup:
+        diagnostico = "sin_experiencias_rup"
+    elif not rup_por_codigo:
+        diagnostico = "experiencias_rup_sin_codigos"
 
     return {
         "codigos_pliego_total": len(codigos_pliego),
         "codigos_rup_total": len(rup_por_codigo),
+        "experiencias_rup_total": len(experiencias_rup),
         "codigos_comunes": sorted(comunes, key=lambda row: row["codigo"]),
         "codigos_faltantes": sorted(faltantes, key=lambda row: row["codigo"]),
+        "coincidencias_objeto": buscar_coincidencias_objeto_contractual(objeto_contrato, experiencias_rup),
+        "diagnostico": diagnostico,
     }
 
 
@@ -697,6 +1010,51 @@ def extraer_requisitos_sugeridos(texto: str, limite: int = 15) -> List[str]:
     return sugerencias
 
 
+_FACTOR_DESEMPATE_RE = re.compile(
+    r"factor(?:es)?\s+de\s+desempate|criterio(?:s)?\s+de\s+desempate|en\s+caso\s+de\s+empate",
+    re.IGNORECASE,
+)
+
+
+def _extraer_parrafo(texto: str, inicio: int, fin: int, ventana: int = 500) -> str:
+    """Devuelve el parrafo completo alrededor de una coincidencia. Si el documento no usa
+    doble salto de linea entre parrafos (comun en PDFs escaneados/aplanados por OCR), cae a una
+    ventana de caracteres fija alrededor del match."""
+    inicio_parrafo = texto.rfind("\n\n", 0, inicio)
+    inicio_parrafo = 0 if inicio_parrafo == -1 else inicio_parrafo + 2
+    fin_parrafo = texto.find("\n\n", fin)
+    fin_parrafo = len(texto) if fin_parrafo == -1 else fin_parrafo
+    parrafo = texto[inicio_parrafo:fin_parrafo].strip()
+
+    if len(parrafo) < 40:
+        desde = max(0, inicio - ventana)
+        hasta = min(len(texto), fin + ventana)
+        parrafo = texto[desde:hasta].strip()
+
+    return re.sub(r"\s+", " ", parrafo)
+
+
+def extraer_factor_desempate(texto: str) -> List[Dict[str, Any]]:
+    """Busca las clausulas de desempate del pliego (Ley 2069/2020, Decreto 1082) y devuelve el
+    parrafo completo donde aparecen, no solo si existen o no."""
+    if not texto:
+        return []
+
+    hallazgos = []
+    vistos = set()
+    for match in _FACTOR_DESEMPATE_RE.finditer(texto):
+        parrafo = _extraer_parrafo(texto, match.start(), match.end())
+        firma = parrafo[:150].lower()
+        if firma in vistos:
+            continue
+        vistos.add(firma)
+        hallazgos.append({"coincidencia": match.group(0), "texto": parrafo})
+        if len(hallazgos) >= 5:
+            break
+
+    return hallazgos
+
+
 def analyze_text(texto: str, codigos_usuario: Optional[List[str]] = None) -> Dict[str, Any]:
     experiencias = extraer_experiencias(texto)
     codigos_busqueda = [limpiar_codigo(c) for c in (codigos_usuario or []) if limpiar_codigo(c)]
@@ -731,6 +1089,7 @@ def analyze_text(texto: str, codigos_usuario: Optional[List[str]] = None) -> Dic
         "texto_preview": (texto or "")[:5000],
         "texto_completo": texto or "",
         "requisitos_sugeridos": extraer_requisitos_sugeridos(texto),
+        "factor_desempate": extraer_factor_desempate(texto),
     }
 
 
@@ -912,6 +1271,72 @@ def build_checklist_pdf_bytes(licitacion, items: List[Dict[str, Any]], resumen: 
     return pdf_bytes
 
 
+def build_comparativo_pdf_bytes(licitacion, comparativo: Dict[str, Any]) -> bytes:
+    """Genera un PDF con el cruce de codigos UNSPSC (pliego vs RUP) y las coincidencias
+    por objeto contractual, para dejar constancia del resultado del analisis."""
+    if fitz is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La generacion de PDF requiere PyMuPDF instalado en el backend.",
+        )
+
+    NIVEL_ETIQUETA = {"codigo": "", "clase": " (coincide por clase)", "familia": " (coincide por familia)"}
+
+    doc = fitz.open()
+    page = doc.new_page()
+    margin = 50
+    state = {"y": 60, "page": page}
+
+    def draw(text: str, size: float = 11, font: str = "helv", color=(0, 0, 0), gap: float = 8):
+        if state["y"] > state["page"].rect.height - 60:
+            state["page"] = doc.new_page()
+            state["y"] = 60
+        state["page"].insert_text((margin, state["y"]), text, fontsize=size, fontname=font, color=color)
+        state["y"] += size + gap
+
+    draw("COINCIDENCIAS UNSPSC: PLIEGO x RUP", size=16, font="hebo")
+    draw(f"Proceso: {licitacion.numero_secop or 'Sin numero'}", size=11, font="hebo")
+    draw(f"Entidad: {licitacion.entidad_contratante or 'Sin definir'}", size=11)
+    draw(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", size=9, color=(0.45, 0.45, 0.45))
+    state["y"] += 4
+    draw(
+        f"Coincidencias: {len(comparativo['codigos_comunes'])}/{comparativo['codigos_pliego_total']} "
+        "codigos del pliego ya acredita el RUP",
+        size=12,
+        font="hebo",
+    )
+    state["y"] += 8
+
+    draw("CODIGOS EN COMUN", size=12, font="hebo")
+    if not comparativo["codigos_comunes"]:
+        draw("Ningun codigo del pliego coincide todavia con el RUP.", size=10, color=(0.6, 0.2, 0.2))
+    for item in comparativo["codigos_comunes"]:
+        etiqueta_nivel = NIVEL_ETIQUETA.get(item.get("nivel_coincidencia"), "")
+        draw(f"[OK] {item['codigo_formateado']}{etiqueta_nivel} - {item['descripcion_pliego'][:90]}", size=10, color=(0, 0.5, 0))
+        for exp in item["experiencias_rup"][:3]:
+            draw(f"      Exp. #{exp['experiencia_no']} - {exp['contratante']}", size=9, color=(0.4, 0.4, 0.4), gap=4)
+    state["y"] += 6
+
+    if comparativo["codigos_faltantes"]:
+        draw("CODIGOS QUE AUN NO ACREDITA EL RUP", size=12, font="hebo")
+        for item in comparativo["codigos_faltantes"]:
+            draw(f"[ ] {item['codigo_formateado']} - {item['descripcion_pliego'][:90]}", size=10, color=(0.75, 0, 0))
+        state["y"] += 6
+
+    if comparativo.get("coincidencias_objeto"):
+        draw("COINCIDENCIAS POR OBJETO CONTRACTUAL", size=12, font="hebo")
+        for item in comparativo["coincidencias_objeto"]:
+            draw(
+                f"Exp. #{item['experiencia_no']} - {item['contratante']} "
+                f"({item['cantidad_palabras_comunes']} palabras en comun: {', '.join(item['palabras_comunes'][:6])})",
+                size=9.5,
+            )
+
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes
+
+
 def serialize_empresa(empresa: Empresa) -> Dict[str, Any]:
     return {
         "id": str(empresa.id),
@@ -951,6 +1376,9 @@ def serialize_licitacion(licitacion: Licitacion) -> Dict[str, Any]:
         "fecha_subsanacion": licitacion.fecha_subsanacion.isoformat() if licitacion.fecha_subsanacion else None,
         "fecha_adjudicacion": licitacion.fecha_adjudicacion.isoformat() if licitacion.fecha_adjudicacion else None,
         "fecha_visita_obra": licitacion.fecha_visita_obra.isoformat() if licitacion.fecha_visita_obra else None,
+        "fecha_consultas": licitacion.fecha_consultas.isoformat() if licitacion.fecha_consultas else None,
+        "fecha_cierre_dudas": licitacion.fecha_cierre_dudas.isoformat() if licitacion.fecha_cierre_dudas else None,
+        "fecha_evaluacion": licitacion.fecha_evaluacion.isoformat() if licitacion.fecha_evaluacion else None,
         "pliego_url": licitacion.pliego_url,
         "pliego_texto": licitacion.pliego_texto,
         "rup_url": licitacion.rup_url,
@@ -1049,51 +1477,62 @@ def _document_signature(documento: Documento) -> str:
     return normalize_text(" ".join(filter(None, parts)))
 
 
+def _apply_estado_manual(item: Dict[str, Any], estado, documentos_por_id: Dict[str, Documento]) -> Dict[str, Any]:
+    """Aplica el estado manual (checkbox) del checklist sobre un item base.
+    "cumplido" es SIEMPRE decision manual de una persona; el documento adjunto es opcional."""
+    if estado is None:
+        item.update(
+            {
+                "cumple": False,
+                "documento_id": None,
+                "documento_nombre": None,
+                "validado_por": None,
+                "validado_por_nombre": None,
+                "validado_en": None,
+                "requiere_subsanacion": False,
+                "notas_subsanacion": None,
+            }
+        )
+        return item
+
+    documento_adjunto = documentos_por_id.get(str(estado.documento_id)) if estado.documento_id else None
+
+    item.update(
+        {
+            "cumple": bool(estado.cumplido),
+            "documento_id": str(estado.documento_id) if estado.documento_id else None,
+            "documento_nombre": documento_adjunto.nombre if documento_adjunto else None,
+            "validado_por": str(estado.validado_por) if estado.validado_por else None,
+            "validado_por_nombre": None,  # se completa en build_checklist_items (requiere lookup de usuarios)
+            "validado_en": estado.validado_en.isoformat() if estado.validado_en else None,
+            "requiere_subsanacion": bool(estado.requiere_subsanacion),
+            "notas_subsanacion": estado.notas_subsanacion,
+        }
+    )
+    return item
+
+
 def build_required_documents_status(
-    documents: List[Documento], excluidos: Optional[List[str]] = None
+    estados_map: Dict[str, Any], documentos_por_id: Dict[str, Documento], excluidos: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
     excluidos_set = set(excluidos or [])
-    docs_signatures = [
-        {
-            "id": str(documento.id),
-            "nombre": documento.nombre,
-            "firma": _document_signature(documento),
-        }
-        for documento in documents
-    ]
 
     result = []
     for rule in DEFAULT_REQUIRED_DOCUMENTS:
         if rule["key"] in excluidos_set:
             continue
 
-        matched_document = None
-        matched_keyword = None
-        for document_signature in docs_signatures:
-            for keyword in rule["keywords"]:
-                if keyword in document_signature["firma"]:
-                    matched_document = document_signature
-                    matched_keyword = keyword
-                    break
-            if matched_document:
-                break
-
-        result.append(
-            {
-                "key": rule["key"],
-                "nombre": rule["nombre"],
-                "descripcion": rule["descripcion"],
-                "categoria": rule["categoria"],
-                "obligatorio": rule["obligatorio"],
-                "cumple": matched_document is not None,
-                "documento_id": matched_document["id"] if matched_document else None,
-                "documento_nombre": matched_document["nombre"] if matched_document else None,
-                "match_keyword": matched_keyword,
-                "personalizado": False,
-                "requisito_id": None,
-                "excluible": True,
-            }
-        )
+        item = {
+            "key": rule["key"],
+            "nombre": rule["nombre"],
+            "descripcion": rule["descripcion"],
+            "categoria": rule["categoria"],
+            "obligatorio": rule["obligatorio"],
+            "personalizado": False,
+            "requisito_id": None,
+            "excluible": True,
+        }
+        result.append(_apply_estado_manual(item, estados_map.get(rule["key"]), documentos_por_id))
 
     return result
 
@@ -1101,17 +1540,15 @@ def build_required_documents_status(
 def build_checklist_items(
     licitacion_id: str, documents: List[Documento], db: Session, excluidos: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
-    """Checklist base (DEFAULT_REQUIRED_DOCUMENTS, menos los excluidos) + requisitos personalizados."""
-    items = build_required_documents_status(documents, excluidos)
+    """Checklist base (DEFAULT_REQUIRED_DOCUMENTS, menos los excluidos) + requisitos personalizados.
+    El estado "cumplido" es siempre manual (checkbox), guardado en ChecklistEstado; subir un
+    documento es opcional y no marca nada por si solo."""
+    from src.controllers.checklist_estado_controller import ChecklistEstadoController
 
-    docs_signatures = [
-        {
-            "id": str(documento.id),
-            "nombre": documento.nombre,
-            "firma": _document_signature(documento),
-        }
-        for documento in documents
-    ]
+    estados_map = ChecklistEstadoController.get_estados_map(licitacion_id, db)
+    documentos_por_id = {str(documento.id): documento for documento in documents}
+
+    items = build_required_documents_status(estados_map, documentos_por_id, excluidos)
 
     custom_requisitos = (
         db.query(RequisitoChecklist)
@@ -1121,31 +1558,57 @@ def build_checklist_items(
     )
 
     for requisito in custom_requisitos:
-        keyword = normalize_text(requisito.nombre)
-        matched_document = None
-        if keyword:
-            for document_signature in docs_signatures:
-                if keyword in document_signature["firma"]:
-                    matched_document = document_signature
-                    break
+        item_key = f"custom:{requisito.id}"
+        item = {
+            "key": item_key,
+            "requisito_id": str(requisito.id),
+            "nombre": requisito.nombre,
+            "descripcion": requisito.descripcion_original or "Requisito agregado para esta licitacion",
+            "categoria": "personalizado",
+            "obligatorio": requisito.obligatorio if requisito.obligatorio is not None else True,
+            "personalizado": True,
+        }
+        items.append(_apply_estado_manual(item, estados_map.get(item_key), documentos_por_id))
 
-        items.append(
-            {
-                "key": f"custom:{requisito.id}",
-                "requisito_id": str(requisito.id),
-                "nombre": requisito.nombre,
-                "descripcion": requisito.descripcion_original or "Requisito agregado para esta licitacion",
-                "categoria": "personalizado",
-                "obligatorio": requisito.obligatorio if requisito.obligatorio is not None else True,
-                "cumple": matched_document is not None,
-                "documento_id": matched_document["id"] if matched_document else None,
-                "documento_nombre": matched_document["nombre"] if matched_document else None,
-                "match_keyword": keyword if matched_document else None,
-                "personalizado": True,
-            }
+    usuario_ids = {item["validado_por"] for item in items if item.get("validado_por")}
+    if usuario_ids:
+        import uuid as _uuid
+
+        nombres = ChecklistEstadoController.nombres_usuarios(
+            (_uuid.UUID(uid) for uid in usuario_ids), db
         )
+        for item in items:
+            if item.get("validado_por"):
+                item["validado_por_nombre"] = nombres.get(_uuid.UUID(item["validado_por"]))
 
     return items
+
+
+def build_checklist_actividad(licitacion_id: str, db: Session, limit: int = 15) -> List[Dict[str, Any]]:
+    """Actividad reciente del checklist (quien marco cada item, cuando), con el nombre del
+    item resuelto contra el checklist actual (default + personalizado)."""
+    from src.controllers.checklist_estado_controller import ChecklistEstadoController
+
+    licitacion_row = db.query(Licitacion).filter(Licitacion.id == licitacion_id).first()
+    excluidos = licitacion_row.checklist_excluidos if licitacion_row else None
+
+    nombres_por_key = {rule["key"]: rule["nombre"] for rule in DEFAULT_REQUIRED_DOCUMENTS}
+    excluidos_set = set(excluidos or [])
+    nombres_por_key = {key: nombre for key, nombre in nombres_por_key.items() if key not in excluidos_set}
+
+    custom_requisitos = (
+        db.query(RequisitoChecklist)
+        .filter(RequisitoChecklist.licitacion_id == licitacion_id, RequisitoChecklist.tipo == "global")
+        .all()
+    )
+    for requisito in custom_requisitos:
+        nombres_por_key[f"custom:{requisito.id}"] = requisito.nombre
+
+    actividad = ChecklistEstadoController.listar_actividad(licitacion_id, db, limit)
+    for entrada in actividad:
+        entrada["item_nombre"] = nombres_por_key.get(entrada["item_key"], entrada["item_key"])
+
+    return actividad
 
 
 def build_licitacion_explorer(licitacion_id: str, db: Session) -> Dict[str, Any]:
@@ -1169,10 +1632,15 @@ def build_licitacion_explorer(licitacion_id: str, db: Session) -> Dict[str, Any]
         else []
     )
 
+    from src.controllers.licitacion_controller import LicitacionController
+
+    LicitacionController._avanzar_fase_por_cronograma(licitacion, db)
+
     tree = build_folder_tree(folders, documents)
     required_documents = build_checklist_items(licitacion.id, documents, db, licitacion.checklist_excluidos)
     obligatory_completed = sum(1 for item in required_documents if item["cumple"] and item["obligatorio"])
     obligatory_total = sum(1 for item in required_documents if item["obligatorio"])
+    semaforo = LicitacionController.calcular_semaforo(licitacion, db)
 
     pliego_analysis = None
     if licitacion.pliego_texto:
@@ -1182,7 +1650,7 @@ def build_licitacion_explorer(licitacion_id: str, db: Session) -> Dict[str, Any]
     if licitacion.rup_texto:
         rup_analysis = analyze_text(licitacion.rup_texto)
 
-    comparativo_codigos = comparar_codigos_pliego_rup(licitacion.pliego_texto, licitacion.rup_texto)
+    comparativo_codigos = comparar_codigos_pliego_rup(licitacion.pliego_texto, licitacion.rup_texto, licitacion.objeto_contrato)
     indicadores_financieros = comparar_indicadores_financieros(
         licitacion.rup_texto,
         licitacion.pliego_texto,
@@ -1201,7 +1669,7 @@ def build_licitacion_explorer(licitacion_id: str, db: Session) -> Dict[str, Any]
     }
 
     return {
-        "licitacion": serialize_licitacion(licitacion),
+        "licitacion": {**serialize_licitacion(licitacion), "semaforo": semaforo},
         "empresa": serialize_empresa(empresa),
         "carpetas": tree["arbol"],
         "documentos_raiz": tree["documentos_raiz"],

@@ -103,12 +103,25 @@
   color: var(--text-secondary);
 }
 
+.adm-section__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* Tabla genérica */
 
 .adm-table {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.adm-table--scroll {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .adm-table__head {

@@ -25,6 +25,9 @@ frontend/.vite/
 uploads/
 backend/uploads/
 
+# Backups de la base de datos (dumps con datos reales de negocio, no codigo fuente)
+backend/backups/
+
 # Misc
 *.log
 backend/src.zip

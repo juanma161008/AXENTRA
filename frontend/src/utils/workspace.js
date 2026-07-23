@@ -39,6 +39,14 @@ export const toProperCase = (value) => {
     .join(' ');
 };
 
+// Regla de nombre propio para campos de texto libre: fuerza la primera letra en
+// mayúscula mientras se escribe, sin tocar el resto (para no pelear con el cursor).
+export const capitalizeFirst = (value) => {
+  if (!value) return value;
+  const text = String(value);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
 export const getInitials = (value) => {
   if (!value) return 'AX';
   const parts = String(value)
@@ -229,4 +237,24 @@ export const formatStatusLabel = (status) => {
 export const mapStatusLabel = formatStatusLabel;
 
 export const safeArray = (value) => (Array.isArray(value) ? value : []);
+
+const SEMAFORO_TONES = {
+  rojo: 'danger',
+  naranja: 'warning',
+  verde: 'success',
+};
+
+export const getSemaforoTone = (semaforo) => SEMAFORO_TONES[semaforo] || 'neutral';
+
+const SEMAFORO_LABELS = {
+  rojo: 'Crítico',
+  naranja: 'Aviso',
+  verde: 'Normal',
+};
+
+export const getSemaforoLabel = (semaforo) => SEMAFORO_LABELS[semaforo] || 'Sin datos';
+
+// El usuario logueado trae su propio listado de permisos efectivos (rol + overrides
+// puntuales otorgados desde Administración > Permisos) en `user.permisos`.
+export const hasPermission = (user, key) => Boolean(user?.permisos?.includes(key));
 

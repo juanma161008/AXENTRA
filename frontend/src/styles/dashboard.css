@@ -298,6 +298,13 @@
   gap: 8px;
 }
 
+.dashboard__list--scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+  margin-top: 14px;
+}
+
 .dashboard__row {
   display: flex;
   align-items: center;

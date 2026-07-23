@@ -30,7 +30,7 @@ from src.schemas.documento import (
     DocumentoUpdate,
     MessageResponse,
 )
-from src.services.licitacion_explorer_service import analyze_file_bytes
+from src.services.licitacion_explorer_service import analyze_file_bytes, buscar_posicion_en_pdf
 from src.utils.file_handlers import FileHandler
 from src.utils.permissions import has_permission
 
@@ -399,6 +399,34 @@ def get_documento_archivo(
         filename=nombre_descarga,
         content_disposition_type="inline",
     )
+
+
+@router.get("/{documento_id}/buscar-pagina")
+def buscar_pagina_documento(
+    documento_id: uuid.UUID,
+    q: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Busca en que pagina del PDF real aparece un fragmento de texto y en que rectangulos
+    exactos, para saltar ahi y subrayarlo en el visor en vez de mostrar la transcripcion
+    OCR (que puede haberse comido letras) o dejar que el usuario lo busque a ojo."""
+    documento = db.query(Documento).filter(Documento.id == documento_id).first()
+    if not documento:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+
+    _require_document_access(current_user, documento.empresa_id)
+
+    if not documento.ruta_archivo or not os.path.exists(documento.ruta_archivo):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El archivo ya no esta disponible en el servidor")
+
+    with open(documento.ruta_archivo, "rb") as archivo:
+        file_bytes = archivo.read()
+
+    resultado = buscar_posicion_en_pdf(file_bytes, q)
+    if not resultado:
+        return {"pagina": None, "rects": [], "page_width": None, "page_height": None}
+    return resultado
 
 
 @router.put("/{documento_id}", response_model=DocumentoResponse)

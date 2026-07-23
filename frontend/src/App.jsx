@@ -9,7 +9,6 @@ import Login from './components/auth/Login';
 import Layout from './components/layout/Layout';
 import Dashboard from './components/dashboard/Dashboard';
 import Explorer from './components/explorer/Explorer';
-import Checklist from './components/checklist/Checklist';
 import AIPanel from './components/ai/AIPanel';
 import LicitacionesPanel from './components/licitaciones/LicitacionesPanel';
 import ReportsPanel from './components/reports/ReportsPanel';
@@ -31,10 +30,6 @@ const MODULE_META = {
   biblioteca: {
     title: 'Biblioteca',
     subtitle: 'Explorador tipo OneDrive con carpetas, documentos y detalle',
-  },
-  checklist: {
-    title: 'Checklist inteligente',
-    subtitle: 'Documentos obligatorios y carga guiada con estados en verde',
   },
   ia: {
     title: 'IA documental',
@@ -60,7 +55,17 @@ const AppContent = () => {
   const [selectedLicitacionId, setSelectedLicitacionId] = useLocalStorage(STORAGE_KEYS.licitacionId, '');
   const [companySelectorOpen, setCompanySelectorOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [pendingDetailId, setPendingDetailId] = useState('');
   const isAdmin = Boolean(user?.roles?.some((role) => ADMIN_ROLES.includes(role)));
+
+  // Desde el semáforo del Dashboard (u otros listados fuera de Licitaciones) se puede
+  // saltar directo al detalle de una licitación: selecciona el id, cambia al módulo
+  // Licitaciones y deja marcado que ese detalle debe abrirse apenas cargue el panel.
+  const handleFocusLicitacion = (licitacionId) => {
+    setSelectedLicitacionId(licitacionId);
+    setPendingDetailId(licitacionId);
+    setActiveModule('licitaciones');
+  };
 
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [companies, setCompanies] = useState([]);
@@ -204,6 +209,7 @@ const AppContent = () => {
             isAdmin={isAdmin}
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
+            onFocusLicitacion={handleFocusLicitacion}
             onCreateLicitacion={openCreateModal}
             refreshToken={workspaceVersion}
           />
@@ -213,11 +219,15 @@ const AppContent = () => {
           <LicitacionesPanel
             selectedCompany={selectedCompany}
             isAdmin={isAdmin}
+            user={user}
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
             onCreateLicitacion={openCreateModal}
             onNavigate={setActiveModule}
+            onRefreshWorkspace={refreshWorkspace}
             refreshToken={workspaceVersion}
+            pendingDetailId={pendingDetailId}
+            onConsumePendingDetail={() => setPendingDetailId('')}
           />
         );
       case 'biblioteca':
@@ -228,18 +238,6 @@ const AppContent = () => {
             selectedLicitacionId={selectedLicitacionId}
             onSelectLicitacion={setSelectedLicitacionId}
             refreshToken={workspaceVersion}
-          />
-        );
-      case 'checklist':
-        return (
-          <Checklist
-            selectedCompany={selectedCompany}
-            isAdmin={isAdmin}
-            selectedLicitacionId={selectedLicitacionId}
-            onSelectLicitacion={setSelectedLicitacionId}
-            refreshToken={workspaceVersion}
-            onRefreshWorkspace={refreshWorkspace}
-            onNavigate={setActiveModule}
           />
         );
       case 'ia':
